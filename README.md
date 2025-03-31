@@ -1,0 +1,11 @@
+# TODOS
+- [ ] Use elevation angle for weighted least squares
+- [ ] Refactor rinexmanger, create a class for it
+- [ ] Use doppler measurements for weighted least squares
+- [ ] Add tests cases for satellite positions
+- [ ] Add a `LICENSE` file
+- [ ] Add ionospheric correction for single frequency measurements
+- [ ] Add simple tropospheric correction
+- [ ] Compute satellite positions in parallel
+- [ ] Compute pseudo ranges in parallel
+- [ ] Fix georinex library to be able to read navigation messages from IGS

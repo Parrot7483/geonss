@@ -1,0 +1,2 @@
+
+from .spacial_plot import plot_coordinates_on_map

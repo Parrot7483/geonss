@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=45"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geonss"
+version = "0.1.0"
+description = "GNSS positioning tools"
+requires-python = ">=3.8"
+dependencies = [
+    "georinex==1.16.2",
+    "matplotlib==3.10.1",
+    "numpy==2.2.4",
+    "pandas",
+    "paramiko==3.5.1",
+    "pint==0.24.4",
+    "platformdirs==4.3.6",
+    "pytest==8.3.4",
+    "xarray==2025.1.2",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["geonss"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v"
