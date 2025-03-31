@@ -38,12 +38,12 @@
       "flake": false,
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-hsfinCaOzaW/lAvrv3vGyP2H9JQnECs+NqTGZFmJ2Es=",
-        "path": "./requirements.txt",
+        "narHash": "sha256-WZf1TiWj/ITJ/l7vsEtjkfVVwPkxMJnt8q1TIhXP1eY=",
+        "path": "requirements.txt",
         "type": "path"
       },
       "original": {
-        "path": "./requirements.txt",
+        "path": "requirements.txt",
         "type": "path"
       }
     },

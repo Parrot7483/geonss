@@ -53,8 +53,10 @@ def calculate_pseudo_ranges(obs_data: xr.Dataset) -> xr.Dataset:
     )
 
     # TODO: Right now we drop any Satellite that does not support dual frequency measurements
-    # Maybe we should use single frequency measurements as well and weight them accordingly
-    def calculate_dual_frequency_range(obs_slice: xr.Dataset) -> Tuple[np.float64, np.float64]:
+    # Maybe we should use single frequency measurements as well and weight
+    # them accordingly
+    def calculate_dual_frequency_range(
+            obs_slice: xr.Dataset) -> Tuple[np.float64, np.float64]:
         # L1 and L5 carrier frequencies in MHz
         f1 = 1575.42
         f5 = 1176.45
@@ -65,7 +67,8 @@ def calculate_pseudo_ranges(obs_data: xr.Dataset) -> xr.Dataset:
         s1c = obs_slice.S1C.item()
         s5q = obs_slice.S5Q.item()
 
-        # Skip this satellite if any pseudo-range measurement or SNR value is missing
+        # Skip this satellite if any pseudo-range measurement or SNR value is
+        # missing
         if isnan(c1c) or isnan(c5q) or isnan(s1c) or isnan(s5q):
             return np.float64(np.nan), np.float64(np.nan)
 
@@ -93,7 +96,8 @@ def calculate_pseudo_ranges(obs_data: xr.Dataset) -> xr.Dataset:
             if isnan(pseudo_range):
                 continue
 
-            ranges['pseudo_range'].loc[dict(time=timestamp, sv=satellite)] = pseudo_range
+            ranges['pseudo_range'].loc[dict(
+                time=timestamp, sv=satellite)] = pseudo_range
             ranges['weight'].loc[dict(time=timestamp, sv=satellite)] = weight
 
     return ranges
@@ -169,18 +173,21 @@ def calculate_satellite_positions(
             gps_week, reception_time = datetime_gps_to_week_and_seconds(dt)
 
             # Get pseudo-range for this time and satellite
-            pseudo_range = ranges.pseudo_range.sel(time=dt, sv=satellite).item()
+            pseudo_range = ranges.pseudo_range.sel(
+                time=dt, sv=satellite).item()
 
             # Calculate signal travel time
             # This is physically correct: travel_time = distance/speed
             travel_time = pseudo_range / SPEED_OF_LIGHT
 
             # Calculate transmission time
-            # This is the time when satellite sent the signal (reception_time - travel_time)
+            # This is the time when satellite sent the signal (reception_time -
+            # travel_time)
             transmission_time = reception_time - travel_time
 
             # Calculate satellite position and clock bias at transmission time
-            position, clock_bias = satellite_position_clock_correction(ephemeris, transmission_time)
+            position, clock_bias = satellite_position_clock_correction(
+                ephemeris, transmission_time)
 
             # Store results in dataset
             result['x'].loc[dict(time=dt, sv=satellite)] = position.x
@@ -193,7 +200,8 @@ def calculate_satellite_positions(
     return result
 
 
-def apply_earth_rotation_correction(sat_coords: np.ndarray, travel_time: np.float64) -> np.ndarray:
+def apply_earth_rotation_correction(
+        sat_coords: np.ndarray, travel_time: np.float64) -> np.ndarray:
     """
     Apply Earth rotation correction to satellite coordinates.
 
@@ -255,10 +263,17 @@ def build_geometry_and_residuals(
             sat_pos.sel(sv=satellite)['z'].item()
         ], dtype=np.float64)
 
-        sat_clock_bias = np.float64(sat_pos.sel(sv=satellite)['clock_bias'].item() * SPEED_OF_LIGHT)
+        sat_clock_bias = np.float64(
+            sat_pos.sel(
+                sv=satellite)['clock_bias'].item() *
+            SPEED_OF_LIGHT)
 
         # Calculate signal travel time and apply Earth rotation correction
-        tau = np.float64((satellite_range - clock_bias + sat_clock_bias) / SPEED_OF_LIGHT)
+        tau = np.float64(
+            (satellite_range -
+             clock_bias +
+             sat_clock_bias) /
+            SPEED_OF_LIGHT)
         corrected_sat_coords = apply_earth_rotation_correction(sat_coords, tau)
 
         # Calculate geometric range and line-of-sight vector
@@ -266,8 +281,10 @@ def build_geometry_and_residuals(
         line_of_sight = (corrected_sat_coords - receiver_pos) / predicted_range
 
         # Update geometry matrix and residuals
-        residuals.append(satellite_range - (predicted_range + clock_bias - sat_clock_bias))
-        geometry_matrix.append([-line_of_sight[0], -line_of_sight[1], -line_of_sight[2], 1])
+        residuals.append(satellite_range -
+                         (predicted_range + clock_bias - sat_clock_bias))
+        geometry_matrix.append(
+            [-line_of_sight[0], -line_of_sight[1], -line_of_sight[2], 1])
         weights.append(weight)
 
     return (
@@ -363,7 +380,10 @@ def solve_position_solution(
 
         # Check for convergence
         if clock_change < 0.00003 and position_change < 0.05:
-            logger.debug(f"Converged after iteration with dx={position_change:.6f}m, db={clock_change:.6f}m")
+            logger.debug(
+                f"Converged after iteration with dx={
+                    position_change:.6f}m, db={
+                    clock_change:.6f}m")
             break
 
         # Update position and clock bias
@@ -395,7 +415,8 @@ def solve_position_solutions(
         List of tuples (timestamp, position, clock_bias) for each successful time step
     """
     # Select common satellites
-    logger.info("Selecting common satellites between observation and navigation data")
+    logger.info(
+        "Selecting common satellites between observation and navigation data")
     common_satellites = get_common_satellites(observation, navigation)
     observation = select_satellites(observation, common_satellites)
     navigation = select_satellites(navigation, common_satellites)
@@ -409,7 +430,8 @@ def solve_position_solutions(
     sat_pos = calculate_satellite_positions(navigation, ranges)
 
     # Compute position for each time step
-    logger.info(f"Computing receiver positions for {len(observation.time.values)} time steps")
+    logger.info(
+        f"Computing receiver positions for {len(observation.time.values)} time steps")
     positions = []
     current_pos = initial_pos
     current_clock_bias = None
@@ -433,7 +455,11 @@ def solve_position_solutions(
         except Exception as e:
             logger.warning(f"Error computing position at {t}: {e}")
 
-    logger.info(f"Successfully computed {len(positions)} positions out of {len(observation.time.values)} time steps")
+    logger.info(
+        f"Successfully computed {
+            len(positions)} positions out of {
+            len(
+                observation.time.values)} time steps")
 
     return positions
 
@@ -443,13 +469,17 @@ def main():
     logging.basicConfig(level=logging.INFO)
 
     # Load data
-    base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base = os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(
+                os.path.abspath(__file__))))
 
     # observation = load_cached_rinex(base + "/tests/data/GEOP057V.25o")
     # navigation = load_cached_navigation_message(datetime(2025, 2, 26), "WTZR00DEU")
 
     observation = load_cached_rinex(base + "/tests/data/GEOP085R.25o")
-    navigation = load_cached_navigation_message(datetime(2025, 3, 26), "WTZR00DEU")
+    navigation = load_cached_navigation_message(
+        datetime(2025, 3, 26), "WTZR00DEU")
 
     # Select constellations
     observation = select_constellations(observation, galileo=True, gps=True)
@@ -470,7 +500,8 @@ def main():
     # Calculate statistics
     mean_position = ECEFPosition.from_positions_list_mean(computed_positions)
     mean_distance = mean_position.distance_to(true_position)
-    horizontal_dist, altitude_diff = mean_position.horizontal_and_altitude_distance_to(true_position)
+    horizontal_dist, altitude_diff = mean_position.horizontal_and_altitude_distance_to(
+        true_position)
 
     # Convert to LLA for visualization
     mean_position_lla = mean_position.to_lla()
@@ -479,14 +510,22 @@ def main():
 
     # Print results
     print(f"Mean distance: {mean_distance:.3f} meters")
-    print(f"Horizontal distance: {horizontal_dist:.3f} meters, Altitude difference: {altitude_diff:.3f} meters")
-    print(f"Computed: {mean_position_lla}; {mean_position_lla.google_maps_link()}")
+    print(
+        f"Horizontal distance: {
+            horizontal_dist:.3f} meters, Altitude difference: {
+            altitude_diff:.3f} meters")
+    print(
+        f"Computed: {mean_position_lla}; {
+            mean_position_lla.google_maps_link()}")
     print(f"Real: {true_position_lla}; {true_position_lla.google_maps_link()}")
 
     # Optional: Plot results
     from subprocess import Popen
     from geonss.plotting import plot_coordinates_on_map
-    path = plot_coordinates_on_map(true_position_lla, mean_position_lla, computed_positions_lla)
+    path = plot_coordinates_on_map(
+        true_position_lla,
+        mean_position_lla,
+        computed_positions_lla)
     Popen(['xdg-open', path], start_new_session=True)
 
 

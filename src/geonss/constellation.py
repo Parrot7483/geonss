@@ -63,7 +63,7 @@ def get_constellation(satellite_id: str) -> Constellation:
     Maps a satellite identifier to its constellation.
 
     Args:
-        satellite_id: Satellite ID in format [A-Z]\d{2} (e.g. G01, R24, E11)
+        satellite_id: Satellite ID in format [A-Z]\\d{2} (e.g. G01, R24, E11)
 
     Returns:
         The constellation enum for the satellite
@@ -82,7 +82,8 @@ def get_constellation(satellite_id: str) -> Constellation:
         'I': Constellation.IRNSS
     }
 
-    return constellation_map.get(satellite_id[0].upper(), Constellation.UNKNOWN)
+    return constellation_map.get(
+        satellite_id[0].upper(), Constellation.UNKNOWN)
 
 
 # noinspection SpellCheckingInspection

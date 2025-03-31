@@ -1,5 +1,6 @@
 # TODOS
 - [ ] Use elevation angle for weighted least squares
+- [ ] Clean up pylint
 - [ ] Refactor rinexmanger, create a class for it
 - [ ] Use doppler measurements for weighted least squares
 - [ ] Add tests cases for satellite positions

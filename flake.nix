@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     requirements = {
-      url = "path:./requirements.txt";  # Track requirements.txt as an input
+      url = "path:requirements.txt";  # Track requirements.txt as an input
       flake = false;
     };
   };
@@ -49,9 +49,8 @@
               source "$VENV_DIR/bin/activate"
 
               echo "Installing and upgrading dependencies..."
-              pip install --quiet --disable-pip-version-check --upgrade -r requirements.txt
-
-              alias pep8="autopep8 --in-place --aggressive src/*.py"
+              pip install --quiet --disable-pip-version-check --upgrade -r ${requirements}
+              pip install --quiet --disable-pip-version-check -e .
           '';
         };
       }
