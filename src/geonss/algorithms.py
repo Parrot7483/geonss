@@ -54,7 +54,8 @@ def weighted_least_squares(
 
     return solution
 
-def sequential_weighted_least_squares(
+
+def iterative_weighted_least_squares(
         initial_state: np.ndarray,
         build_model_fn: Callable[..., Tuple[np.ndarray, np.ndarray, np.ndarray]],
         check_convergence_fn: Callable[[np.ndarray], bool],

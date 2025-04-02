@@ -24,6 +24,20 @@ from geonss.rinexmanager.util import *
 logger = logging.getLogger(__name__)
 
 
+# TODO: Think about a better convergence criterion
+def check_gnss_convergence(parameter_vector_update: np.ndarray) -> bool:
+    """
+    Check if GNSS position solution has converged.
+
+    Args:
+        parameter_vector_update: Update to parameter_vector vector
+
+    Returns:
+        True if solution has converged, False otherwise
+    """
+    return np.linalg.norm(parameter_vector_update) < 0.1
+
+
 def build_gnss_model(
         parameter_vector: np.ndarray,
         ranges: xr.Dataset,
@@ -99,72 +113,15 @@ def build_gnss_model(
     )
 
 
-# TODO: Think about a better convergence criterion
-def check_gnss_convergence(parameter_vector_update: np.ndarray) -> bool:
-    """
-    Check if GNSS position solution has converged.
-
-    Args:
-        parameter_vector_update: Update to parameter_vector vector
-
-    Returns:
-        True if solution has converged, False otherwise
-    """
-    return np.linalg.norm(parameter_vector_update) < 0.1
-
 def solve_position_solution(
-        ranges: xr.Dataset,
-        sat_pos: xr.Dataset,
-        a_priori_position: ECEFPosition = ECEFPosition(),
-        a_priori_clock_bias: np.float64 = np.float64(0.0),
-) -> Tuple[ECEFPosition, np.float64]:
-    """
-    Solve for receiver position using iterative least squares method.
-
-    Args:
-        ranges: Dataset with pseudo ranges and weights for each satellite
-        sat_pos: Dataset with satellite positions and clock bias
-        a_priori_position: Initial position guess as ECEFPosition
-        a_priori_clock_bias: Initial clock bias guess in meters
-
-    Returns:
-        Tuple containing:
-            - receiver position as ECEFPosition
-            - receiver clock bias in meters
-    """
-    # Ensure we have enough satellites with valid pseudo-ranges
-    if len([r for r in ranges.pseudo_range.values if not np.isnan(r)]) < 4:
-        raise ValueError("Not enough pseudo-ranges to compute position")
-
-    # Create initial parameter_vector vector (position and clock bias)
-    initial_state = np.zeros(4, dtype=np.float64)
-    initial_state[:3] = a_priori_position.array
-    initial_state[3] = a_priori_clock_bias
-
-    # Solve using sequential least squares
-    final_state = sequential_weighted_least_squares(
-        initial_state=initial_state,
-        build_model_fn=build_gnss_model,
-        check_convergence_fn=check_gnss_convergence,
-        max_iterations=10,
-        damping_factor=np.float64(0.01),
-        ranges=ranges,
-        sat_pos=sat_pos
-    )
-
-    # Convert final parameter_vector back to expected return format
-    final_position = ECEFPosition.from_array(final_state[:3])
-    final_clock_bias = np.float64(final_state[3])
-
-    return final_position, final_clock_bias
-
-
-def solve_position_solutions(
         observation: xr.Dataset,
         navigation: xr.Dataset,
+        a_priori_position: ECEFPosition = ECEFPosition(),
+        a_priori_clock_bias: Optional[np.float64] = np.float64(0)
 ) -> List[Tuple[np.datetime64, ECEFPosition, np.float64]]:
     """
-    Compute receiver positions for each time step in the observation data.
+    Compute receiver positions for each time step in the observation data
+    using iterative least squares method
 
     This function:
     1. Prepares the input data (selects common satellites)
@@ -175,6 +132,7 @@ def solve_position_solutions(
         observation: Dataset containing GNSS observations
         navigation: Dataset containing navigation messages
         a_priori_position: Initial position guess (optional)
+        a_priori_clock_bias: Initial clock bias guess in meters (optional)
 
     Returns:
         List of tuples (timestamp, position, clock_bias) for each successful time step
@@ -206,7 +164,29 @@ def solve_position_solutions(
             ranges_t = ranges.sel(time=t)
             sat_pos_t = sat_pos.sel(time=t)
 
-            position, clock_bias = solve_position_solution(ranges_t, sat_pos_t)
+            # Ensure we have enough satellites with valid pseudo-ranges
+            if len([r for r in ranges_t.pseudo_range.values if not np.isnan(r)]) < 4:
+                raise ValueError("Not enough pseudo-ranges to compute position")
+
+            # Create initial parameter_vector vector (position and clock bias)
+            initial_state = np.zeros(4, dtype=np.float64)
+            initial_state[:3] = a_priori_position.array
+            initial_state[3] = a_priori_clock_bias
+
+            # Solve using sequential least squares
+            final_state = iterative_weighted_least_squares(
+                initial_state=initial_state,
+                build_model_fn=build_gnss_model,
+                check_convergence_fn=check_gnss_convergence,
+                max_iterations=10,
+                damping_factor=np.float64(0.01),
+                ranges=ranges_t,
+                sat_pos=sat_pos_t
+            )
+
+            # Convert final parameter_vector back to expected return format
+            position = ECEFPosition.from_array(final_state[:3])
+            clock_bias = np.float64(final_state[3])
 
             positions.append((t, position, clock_bias))
             logger.debug(f"Successfully computed position for time {t}")
@@ -244,7 +224,7 @@ def main():
     navigation = select_constellations(navigation, galileo=True, gps=False)
 
     # Compute positions
-    position_results = solve_position_solutions(observation, navigation)
+    position_results = solve_position_solution(observation, navigation)
 
     # Extract results
     computed_positions = [pos for _, pos, _ in position_results]
