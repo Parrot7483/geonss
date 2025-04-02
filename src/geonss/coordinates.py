@@ -27,15 +27,27 @@ class ECEFPosition:
     Coordinates are in meters.
     """
 
-    def __init__(self, x: Union[float, np.floating], y: Union[float, np.floating], z: Union[float, np.floating]):
-        self.x = np.float64(x)
-        self.y = np.float64(y)
-        self.z = np.float64(z)
+    def __init__(self,
+                 x: Union[float, np.floating] = 0,
+                 y: Union[float, np.floating] = 0,
+                 z: Union[float, np.floating] = 0
+                 ):
+        self.array = np.array([x, y, z], dtype=np.float64)
 
     @property
-    def array(self) -> np.ndarray:
-        """Get position as a numpy array."""
-        return np.array([self.x, self.y, self.z], dtype=np.float64)
+    def x(self) -> np.float64:
+        """Get x position as a numpy float64."""
+        return np.float64(self.array[0])
+
+    @property
+    def y(self) -> np.float64:
+        """Get y position as a numpy float64."""
+        return np.float64(self.array[1])
+
+    @property
+    def z(self) -> np.float64:
+        """Get z position as a numpy float64."""
+        return np.float64(self.array[2])
 
     @classmethod
     def from_tuple(cls, coordinates: Tuple[float, float, float]) -> 'ECEFPosition':
@@ -68,6 +80,12 @@ class ECEFPosition:
         # Calculate distance from Z axis
         p = np.sqrt(self.x ** 2 + self.y ** 2)
 
+        # Handle special case when point is on or near Z-axis
+        if p < 1e-10:  # Nearly zero
+            latitude = np.pi / 2 if self.z > 0 else - np.pi / 2  # North or South Pole
+            altitude = np.abs(self.z) - EARTH_SEMI_MAJOR_AXIS
+            return LLAPosition(np.degrees(latitude), np.degrees(longitude), altitude)
+
         # Initial latitude guess
         latitude = np.arctan2(self.z, p * (1 - EARTH_ECCENTRICITY_SQUARED))
 
@@ -75,7 +93,10 @@ class ECEFPosition:
         for _ in range(5):
             n = EARTH_SEMI_MAJOR_AXIS / np.sqrt(1 - EARTH_ECCENTRICITY_SQUARED * np.sin(latitude) ** 2)
             h = p / np.cos(latitude) - n
-            latitude = np.arctan2(self.z, p * (1 - EARTH_ECCENTRICITY_SQUARED * n / (n + h)))
+
+            # Add small constant to prevent division by zero
+            denominator = p * (1 - EARTH_ECCENTRICITY_SQUARED * n / (n + h + 1e-10))
+            latitude = np.arctan2(self.z, denominator)
 
         # Calculate final height
         n = EARTH_SEMI_MAJOR_AXIS / np.sqrt(1 - EARTH_ECCENTRICITY_SQUARED * np.sin(latitude) ** 2)
@@ -90,10 +111,6 @@ class ECEFPosition:
     def to_tuple(self) -> Tuple[np.float64, np.float64, np.float64]:
         """Convert to tuple (x, y, z)."""
         return self.x, self.y, self.z
-
-    def to_array(self) -> np.ndarray:
-        """Convert to numpy array [x, y, z]."""
-        return np.array([self.x, self.y, self.z], dtype=np.float64)
 
     def distance_to(self, other: 'ECEFPosition') -> float:
         """Calculate the distance to another ECEF position in meters."""
@@ -123,13 +140,104 @@ class ECEFPosition:
         # Use the LLA method to calculate distances
         return self_lla.horizontal_and_altitude_distance_to(other_lla)
 
-    def __repr__(self) -> str:
-        return f"ECEF({float(self.x):.3f}, {float(self.y):.3f}, {float(self.z):.3f}) m"
+    def calculate_elevation_angle(self, satellite: 'ECEFPosition') -> np.float64:
+        """
+        Calculate elevation angle from this position to a satellite.
+
+        Args:
+            satellite: Satellite position
+
+        Returns:
+            Elevation angle in radians
+        """
+        # Convert receiver position to LLA for reference frame
+        receiver_lla = self.to_lla()
+
+        # Calculate local tangent plane vectors
+        lat_rad = np.radians(receiver_lla.latitude)
+        lon_rad = np.radians(receiver_lla.longitude)
+
+        # Up vector in ECEF
+        up = np.array([
+            np.cos(lat_rad) * np.cos(lon_rad),
+            np.cos(lat_rad) * np.sin(lon_rad),
+            np.sin(lat_rad)
+        ])
+
+        # Calculate vector from receiver to satellite
+        sat_receiver_vector = satellite.array - self.array
+
+        # Normalize vector
+        los_length = np.linalg.norm(sat_receiver_vector)
+        if los_length == 0:
+            return np.float64(np.pi / 2)  # 90 degrees if same position
+
+        los_unit = sat_receiver_vector / los_length
+
+        # Calculate elevation angle (angle between los_unit and up)
+        elevation_angle_rad = np.arcsin(np.dot(los_unit, up))
+
+        return elevation_angle_rad
+
+    def rotate_z(self, angle: float) -> 'ECEFPosition':
+        """
+        Rotate the position around the Z-axis by the specified angle.
+
+        This performs an in-place rotation of the position vector using a
+        standard 3D rotation matrix for Z-axis rotation.
+
+        Args:
+            angle: Rotation angle in radians (positive is counterclockwise when viewed from +Z)
+
+        Returns:
+            Self reference for method chaining
+        """
+        cos_angle = np.cos(angle)
+        sin_angle = np.sin(angle)
+
+        # Create rotation matrix around Z-axis
+        rotation_matrix = np.array([
+            [cos_angle, -sin_angle, 0],
+            [sin_angle, cos_angle, 0],
+            [0, 0, 1]
+        ])
+
+        # Apply rotation in-place
+        self.array = rotation_matrix @ self.array
+        return self
+
+    def copy(self) -> 'ECEFPosition':
+        """Convenience method to create a shallow copy of this position."""
+        return self.__copy__()
+
+    def __copy__(self):
+        """Create a shallow copy of this position."""
+        return ECEFPosition.from_array(self.array.copy())
 
     def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, ECEFPosition):
-            return False
+        """Check equality with another ECEFPosition using numpy's allclose for array comparison."""
         return bool(np.allclose(self.array, other.array))
+
+    def __add__(self, other: 'ECEFPosition') -> 'ECEFPosition':
+        """Add another ECEFPosition to this one and return a new ECEFPosition representing the sum"""
+        return ECEFPosition.from_array(self.array + other.array)
+
+    def __sub__(self, other: 'ECEFPosition') -> 'ECEFPosition':
+        """Subtract another ECEFPosition from this one and return a new ECEFPosition representing the difference"""
+        return ECEFPosition.from_array(self.array - other.array)
+
+    def __iadd__(self, other: 'ECEFPosition') -> 'ECEFPosition':
+        """Add another ECEFPosition to this one in-place and return self after addition"""
+        self.array += other.array
+        return self
+
+    def __isub__(self, other: 'ECEFPosition') -> 'ECEFPosition':
+        """Subtract another ECEFPosition from this one in-place and return self after subtraction"""
+        self.array -= other.array
+        return self
+
+    def __repr__(self) -> str:
+        return f"ECEF({float(self.x):.3f}, {float(self.y):.3f}, {float(self.z):.3f}) m"
 
 
 # TODO: to and from ISO 6709 format string (e.g., "+12.345678-098.765432+123.456") including WGS-84
@@ -139,16 +247,27 @@ class LLAPosition:
     Latitude and longitude are in degrees, altitude in meters.
     """
 
-    def __init__(self, latitude: Union[float, np.floating], longitude: Union[float, np.floating],
-                 altitude: Union[float, np.floating]):
-        self.latitude = np.float64(latitude)
-        self.longitude = np.float64(longitude)
-        self.altitude = np.float64(altitude)
+    def __init__(self,
+                 latitude: Union[float, np.floating] = 0,
+                 longitude: Union[float, np.floating] = 0,
+                 altitude: Union[float, np.floating] = 0
+                 ):
+        self.array = np.array([latitude, longitude, altitude], dtype=np.float64)
 
     @property
-    def array(self) -> np.ndarray:
-        """Get position as a numpy array."""
-        return np.array([self.latitude, self.longitude, self.altitude], dtype=np.float64)
+    def latitude(self) -> np.float64:
+        """Get latitude as a numpy float64."""
+        return np.float64(self.array[0])
+
+    @property
+    def longitude(self) -> np.float64:
+        """Get longitude as a numpy float64."""
+        return np.float64(self.array[1])
+
+    @property
+    def altitude(self) -> np.float64:
+        """Get altitude as a numpy float64."""
+        return np.float64(self.array[2])
 
     @classmethod
     def from_tuple(cls, coordinates: Tuple[float, float, float]) -> 'LLAPosition':
@@ -183,10 +302,6 @@ class LLAPosition:
     def to_tuple(self) -> Tuple[np.float64, np.float64, np.float64]:
         """Convert to tuple (latitude, longitude, altitude)."""
         return self.latitude, self.longitude, self.altitude
-
-    def to_array(self) -> np.ndarray:
-        """Convert to numpy array [latitude, longitude, altitude]."""
-        return np.array([self.latitude, self.longitude, self.altitude], dtype=np.float64)
 
     def horizontal_and_altitude_distance_to(self, other: 'LLAPosition') -> Tuple[float, float]:
         """
@@ -224,10 +339,18 @@ class LLAPosition:
         """Generate a Google Maps link for this position."""
         return f"https://www.google.com/maps?q={float(self.latitude)},{float(self.longitude)}&h={float(self.altitude)}"
 
+    def copy(self) -> 'LLAPosition':
+        """Convenience method to create a shallow copy of this position."""
+        return self.__copy__()
+
+    def __copy__(self):
+        """Create a shallow copy of this position."""
+        return LLAPosition.from_array(self.array.copy())
+
     def __repr__(self) -> str:
         lat_direction = "N" if self.latitude >= 0 else "S"
         lon_direction = "E" if self.longitude >= 0 else "W"
-        return f"LLA({abs(float(self.latitude)):.6f}°{lat_direction}, {abs(float(self.longitude)):.6f}°{lon_direction}, {float(self.altitude):.3f} m)"
+        return f"LLA({np.abs(self.latitude):.6f}°{lat_direction}, {np.abs(self.longitude):.6f}°{lon_direction}, {self.altitude:.3f} m)"
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, LLAPosition):

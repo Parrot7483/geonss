@@ -15,6 +15,7 @@ based on the WGS-84 reference frame and GNSS constellation parameters.
 """
 
 from typing import Tuple
+import logging
 
 import numpy as np
 import xarray as xr
@@ -23,6 +24,7 @@ from geonss.constants import *
 from geonss.coordinates import ECEFPosition
 from geonss.time import datetime_gps_to_week_and_seconds
 
+logger = logging.getLogger(__name__)
 
 def get_last_nav_messages(nav_data: xr.Dataset, dt: np.datetime64) -> xr.Dataset:
     """
@@ -187,3 +189,100 @@ def satellite_position_clock_correction(
     delta_t_sv = a0 + a1 * delta_t_oc + a2 * np.square(delta_t_oc) + delta_tr
 
     return position, delta_t_sv
+
+
+def calculate_satellite_positions(
+        nav_data: xr.Dataset,
+        ranges: xr.Dataset
+) -> xr.Dataset:
+    """
+    Calculate satellite positions and clock biases for each observation.
+
+    This function determines satellite positions at signal transmission time
+    by using navigation messages and correcting for signal travel time.
+    For each time and satellite, it:
+    1. Estimates signal transmission time based on pseudo range
+    2. Computes satellite position and clock bias at transmission time
+    3. Stores results in an organized dataset
+
+    Args:
+        nav_data: Navigation messages dataset containing ephemeris data
+        ranges: Dataset with pseudo ranges and time/satellite coordinates
+
+    Returns:
+        Dataset containing satellite positions (x, y, z) coordinates and
+        clock bias for each time and satellite
+    """
+    logger.info(
+        f"Starting to compute {len(ranges.sv.values)} satellite positions for {len(ranges.time.values)} time steps")
+
+    # Initialize result dataset with time and sv coordinates from pseudo ranges
+    result = xr.Dataset(
+        coords={
+            'time': ranges.time,
+            'sv': ranges.sv
+        }
+    )
+
+    # Initialize data variables
+    result['x'] = xr.DataArray(
+        dims=['time', 'sv'],
+        coords={'time': ranges.time, 'sv': ranges.sv},
+        attrs={'long_name': 'X Position', 'units': 'meter'}
+    )
+
+    result['y'] = xr.DataArray(
+        dims=['time', 'sv'],
+        coords={'time': ranges.time, 'sv': ranges.sv},
+        attrs={'long_name': 'Y Position', 'units': 'meter'}
+    )
+
+    result['z'] = xr.DataArray(
+        dims=['time', 'sv'],
+        coords={'time': ranges.time, 'sv': ranges.sv},
+        attrs={'long_name': 'Z Position', 'units': 'meter'}
+    )
+
+    result['clock_bias'] = xr.DataArray(
+        dims=['time', 'sv'],
+        coords={'time': ranges.time, 'sv': ranges.sv},
+        attrs={'long_name': 'Clock Bias', 'units': 'second'}
+    )
+
+    # Get the last valid navigation message for the first observation time
+    last_nav_data = get_last_nav_messages(nav_data, ranges.time.values[0])
+
+    for satellite in ranges.sv.values:
+        # Get ephemeris data for this satellite
+        ephemeris = last_nav_data.sel(sv=satellite)
+
+        for dt in ranges.time.values:
+            # Get reception time (time when signal arrived at receiver)
+            gps_week, reception_time = datetime_gps_to_week_and_seconds(dt)
+
+            # Get pseudo-range for this time and satellite
+            pseudo_range = ranges.pseudo_range.sel(
+                time=dt, sv=satellite).item()
+
+            # Calculate signal travel time
+            # This is physically correct: travel_time = distance/speed
+            travel_time = pseudo_range / SPEED_OF_LIGHT
+
+            # Calculate transmission time
+            # This is the time when satellite sent the signal (reception_time -
+            # travel_time)
+            transmission_time = reception_time - travel_time
+
+            # Calculate satellite position and clock bias at transmission time
+            position, clock_bias = satellite_position_clock_correction(
+                ephemeris, transmission_time)
+
+            # Store results in dataset
+            result['x'].loc[dict(time=dt, sv=satellite)] = position.x
+            result['y'].loc[dict(time=dt, sv=satellite)] = position.y
+            result['z'].loc[dict(time=dt, sv=satellite)] = position.z
+            result['clock_bias'].loc[dict(time=dt, sv=satellite)] = clock_bias
+
+        logger.info(f"Finished computing positions for satellite {satellite}")
+
+    return result
