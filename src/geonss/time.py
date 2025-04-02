@@ -18,7 +18,7 @@ import numpy as np
 from typing import Union, Tuple
 
 
-def datetime_gps_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime, str]) -> Tuple[int, np.float64]:
+def datetime_gps_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime, str]) -> Tuple[np.int32, np.float64]:
     """
     Extract GPS week and seconds of week from a datetime object that's already in GPS time.
     No UTC to GPS conversion is performed.
@@ -47,9 +47,9 @@ def datetime_gps_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime,
     # Compute GPS week and time of week using numpy divmod
     gps_week, seconds_of_week = np.divmod(total_seconds, 7 * 24 * 60 * 60)
 
-    return int(gps_week), seconds_of_week
+    return gps_week, seconds_of_week
 
-def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime, str]) -> Tuple[int, np.float64]:
+def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime, str]) -> Tuple[np.int32, np.float64]:
     """
     Convert UTC time to GPS time.
 
@@ -68,25 +68,25 @@ def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime,
     # Leap seconds table (UTC - GPS) as of April 2025
     # This needs to be updated when new leap seconds are added!
     leap_seconds = [
-        (np.datetime64("1980-01-06T00:00:00"), 0),
-        (np.datetime64("1981-07-01T00:00:00"), 1),
-        (np.datetime64("1982-07-01T00:00:00"), 2),
-        (np.datetime64("1983-07-01T00:00:00"), 3),
-        (np.datetime64("1985-07-01T00:00:00"), 4),
-        (np.datetime64("1988-01-01T00:00:00"), 5),
-        (np.datetime64("1990-01-01T00:00:00"), 6),
-        (np.datetime64("1991-01-01T00:00:00"), 7),
-        (np.datetime64("1992-07-01T00:00:00"), 8),
-        (np.datetime64("1993-07-01T00:00:00"), 9),
-        (np.datetime64("1994-07-01T00:00:00"), 10),
-        (np.datetime64("1996-01-01T00:00:00"), 11),
-        (np.datetime64("1997-07-01T00:00:00"), 12),
-        (np.datetime64("1999-01-01T00:00:00"), 13),
-        (np.datetime64("2006-01-01T00:00:00"), 14),
-        (np.datetime64("2009-01-01T00:00:00"), 15),
-        (np.datetime64("2012-07-01T00:00:00"), 16),
-        (np.datetime64("2015-07-01T00:00:00"), 17),
-        (np.datetime64("2017-01-01T00:00:00"), 18)
+        (np.datetime64("1980-01-06T00:00:00"), np.int32(0)),
+        (np.datetime64("1981-07-01T00:00:00"), np.int32(1)),
+        (np.datetime64("1982-07-01T00:00:00"), np.int32(2)),
+        (np.datetime64("1983-07-01T00:00:00"), np.int32(3)),
+        (np.datetime64("1985-07-01T00:00:00"), np.int32(4)),
+        (np.datetime64("1988-01-01T00:00:00"), np.int32(5)),
+        (np.datetime64("1990-01-01T00:00:00"), np.int32(6)),
+        (np.datetime64("1991-01-01T00:00:00"), np.int32(7)),
+        (np.datetime64("1992-07-01T00:00:00"), np.int32(8)),
+        (np.datetime64("1993-07-01T00:00:00"), np.int32(9)),
+        (np.datetime64("1994-07-01T00:00:00"), np.int32(10)),
+        (np.datetime64("1996-01-01T00:00:00"), np.int32(11)),
+        (np.datetime64("1997-07-01T00:00:00"), np.int32(12)),
+        (np.datetime64("1999-01-01T00:00:00"), np.int32(13)),
+        (np.datetime64("2006-01-01T00:00:00"), np.int32(14)),
+        (np.datetime64("2009-01-01T00:00:00"), np.int32(15)),
+        (np.datetime64("2012-07-01T00:00:00"), np.int32(16)),
+        (np.datetime64("2015-07-01T00:00:00"), np.int32(17)),
+        (np.datetime64("2017-01-01T00:00:00"), np.int32(18)),
     ]
 
     # Convert input to numpy.datetime64 if it's not already
@@ -101,7 +101,7 @@ def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime,
         raise ValueError("UTC time cannot be earlier than GPS epoch (January 6, 1980)")
 
     # Find applicable leap seconds
-    leap_second_offset = 0
+    leap_second_offset = np.int32(0)
     for leap_date, offset in leap_seconds:
         if dt >= leap_date:
             leap_second_offset = offset

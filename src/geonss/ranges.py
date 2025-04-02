@@ -29,14 +29,14 @@ def apply_ionospheric_correction(
     and weights the measurements based on SNR.
 
     Args:
-        c1c: L1 C/A code pseudorange in meters
-        c5q: L5 Q code pseudorange in meters
+        c1c: L1 C/A code pseudo range in meters
+        c5q: L5 Q code pseudo range in meters
         s1c: L1 C/A signal-to-noise ratio in dB-Hz
         s5q: L5 Q signal-to-noise ratio in dB-Hz
 
     Returns:
         Tuple containing:
-            - ionosphere-corrected pseudorange in meters
+            - ionosphere-corrected pseudo range in meters
             - signal weight based on combined SNR values
     """
     # Skip if any measurements are missing

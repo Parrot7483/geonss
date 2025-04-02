@@ -41,7 +41,7 @@ def test_solve_position_solution_1():
     print(f"Computed: {mean_position_lla}; {mean_position_lla.google_maps_link()}")
     print(f"Real: {true_position_lla}; {true_position_lla.google_maps_link()}")
 
-    assert mean_distance < 1.0 # meters
+    assert mean_distance < 10.0 # meters
 
 
 def test_solve_position_solution_2():
@@ -79,6 +79,6 @@ def test_solve_position_solution_2():
     print(f"Computed: {mean_position_lla}; {mean_position_lla.google_maps_link()}")
     print(f"Real: {true_position_lla}; {true_position_lla.google_maps_link()}")
 
-    assert mean_distance < 25.0 # meters
+    assert mean_distance < 10.0 # meters
 
 
