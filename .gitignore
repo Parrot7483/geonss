@@ -1,4 +1,5 @@
+**/*.egg-info/
 **/.venv/
-.idea
 **/__pycache__/
 *.svg
+.idea
