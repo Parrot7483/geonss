@@ -62,26 +62,23 @@ def get_last_nav_messages(nav_data: xr.Dataset, dt: np.datetime64) -> xr.Dataset
         return None
 
 
-def satellite_position_clock_correction(
+def satellite_position_velocity_clock_correction(
         ephemeris: xr.Dataset,
-        transmit_time: np.float64
-) -> Tuple[ECEFPosition, np.float64]:
+        dt: np.datetime64
+) -> Tuple[np.float64, np.float64, np.float64, np.float64, np.float64, np.float64, np.float64]:
     """
-    Compute satellite position (ECEF) and clock correction from ephemeris data.
-    Works for GPS and Galileo satellites.
+    Function to compute satellite position (ECEF), velocity (ECEF),
+    and clock correction using individual ephemeris parameters.
 
     Parameters:
         ephemeris (xarray.Dataset): Dataset containing broadcast ephemeris parameters
-        transmit_time (float): GPS seconds of week when the signal was transmitted
+        dt (numpy.datetime64: Time for which to compute the satellite position
 
     Returns:
-        Tuple[ECEFPosition, float]: Satellite ECEF coordinates (x, y, z) in meters and
-        Clock correction (delta_t_sv) in seconds
-
-    Reference:
-    - https://gssc.esa.int/navipedia/index.php/GPS_and_Galileo_Satellite_Coordinates_Computation
-    - https://gssc.esa.int/navipedia/index.php/Clock_Modelling
-    - https://gssc.esa.int/navipedia/index.php/Relativistic_Clock_Correction
+        Tuple[np.float64, np.float64, np.float64, np.float64, np.float64, np.float64, np.float64]:
+        Satellite ECEF coordinates (x, y, z) in meters,
+        Satellite velocity components (vx, vy, vz) in meters/second,
+        Clock correction (delta_t_sv_m) in meters
     """
     t_oe = ephemeris['Toe'].item()
     sqrt_a = ephemeris['sqrtA'].item()
@@ -94,7 +91,11 @@ def satellite_position_clock_correction(
     omega0 = ephemeris['Omega0'].item()
     omega_dot = ephemeris['OmegaDot'].item()
 
-    t_k = transmit_time - t_oe
+    # TODO: Add check that dt is in the same week as t_oe
+    # Get reception time (time when signal arrived at receiver)
+    _, gps_seconds = datetime_gps_to_week_and_seconds(dt)
+
+    t_k = gps_seconds - t_oe
 
     # Handle week crossover
     if t_k > np.float64(302400):
@@ -112,13 +113,10 @@ def satellite_position_clock_correction(
     # Mean anomaly
     m = m0 + n * t_k
 
-    # Eccentric anomaly e_anom using max 5 iterations
+    # Eccentric anomaly using Newton-Raphson method with 3 iterations
     e_anom = m
-    for _ in range(5):
-        e_old = e_anom
-        e_anom = m + e * np.sin(e_old)
-        if np.abs(e_anom - e_old) < np.float64(1e-12):
-            break
+    for _ in range(3):
+        e_anom -= (e_anom - e * np.sin(e_anom) - m) / (1.0 - e * np.cos(e_anom))
 
     # True anomaly v
     sin_e = np.sin(e_anom)
@@ -170,7 +168,37 @@ def satellite_position_clock_correction(
     y = x_prime * sin_omega_k + y_prime * cos_i * cos_omega_k
     z = y_prime * sin_i
 
-    position = ECEFPosition(x, y, z)
+    # Compute time derivative of the eccentric anomaly
+    e_anom_dot = n / (1.0 - e * np.cos(e_anom))
+
+    # Compute time derivative of the argument of latitude
+    phi_dot = np.sqrt(1.0 - np.square(e)) / (1.0 - e * np.cos(e_anom)) * e_anom_dot
+
+    # Compute time derivatives of the correction terms
+    delta_u_dot = 2.0 * (c_us * cos_2phi - c_uc * sin_2phi) * phi_dot
+    delta_r_dot = 2.0 * (c_rs * cos_2phi - c_rc * sin_2phi) * phi_dot
+
+    # Compute time derivatives of radius and argument of latitude
+    u_dot = phi_dot + delta_u_dot
+    r_dot = a * e * np.sin(e_anom) * e_anom_dot + delta_r_dot
+
+    # Compute time derivatives in the orbital plane
+    x_prime_dot = r_dot * np.cos(u) - r * np.sin(u) * u_dot
+    y_prime_dot = r_dot * np.sin(u) + r * np.cos(u) * u_dot
+
+    # Account for the earth's rotation and time derivative of the orbit inclination
+    omega_k_dot = omega_dot - OMEGA_E
+
+    # Compute ECEF velocity components
+    vx = x_prime_dot * cos_omega_k - y_prime_dot * cos_i * sin_omega_k - \
+         (x_prime * sin_omega_k + y_prime * cos_i * cos_omega_k) * omega_k_dot + \
+         y_prime_dot * sin_i * sin_omega_k * i_dot
+
+    vy = x_prime_dot * sin_omega_k + y_prime_dot * cos_i * cos_omega_k + \
+         (x_prime * cos_omega_k - y_prime * cos_i * sin_omega_k) * omega_k_dot - \
+         y_prime_dot * sin_i * cos_omega_k * i_dot
+
+    vz = y_prime_dot * sin_i + y_prime * cos_i * i_dot
 
     # Extract satellite clock parameters from ephemeris data
     t_oc = ephemeris.time.values
@@ -185,10 +213,11 @@ def satellite_position_clock_correction(
     delta_tr = REL_CONST * np.power(e, sqrt_a) * np.sin(e_anom)
 
     # Calculate satellite clock correction
-    delta_t_oc = transmit_time - seconds_of_clock
+    delta_t_oc = gps_seconds - seconds_of_clock
     delta_t_sv = a0 + a1 * delta_t_oc + a2 * np.square(delta_t_oc) + delta_tr
+    delta_t_sv_m = delta_t_sv * SPEED_OF_LIGHT
 
-    return position, delta_t_sv
+    return x, y, z, vx, vy, vz, delta_t_sv_m
 
 
 def calculate_satellite_positions(
@@ -243,6 +272,24 @@ def calculate_satellite_positions(
         attrs={'long_name': 'Z Position', 'units': 'meter'}
     )
 
+    result['vx'] = xr.DataArray(
+        dims=['time', 'sv'],
+        coords={'time': ranges.time, 'sv': ranges.sv},
+        attrs={'long_name': 'X Velocity', 'units': 'meter / second'}
+    )
+
+    result['vy'] = xr.DataArray(
+        dims=['time', 'sv'],
+        coords={'time': ranges.time, 'sv': ranges.sv},
+        attrs={'long_name': 'Y Velocity', 'units': 'meter / second'}
+    )
+
+    result['vz'] = xr.DataArray(
+        dims=['time', 'sv'],
+        coords={'time': ranges.time, 'sv': ranges.sv},
+        attrs={'long_name': 'Z Velocity', 'units': 'meter / second'}
+    )
+
     result['clock_bias'] = xr.DataArray(
         dims=['time', 'sv'],
         coords={'time': ranges.time, 'sv': ranges.sv},
@@ -257,31 +304,18 @@ def calculate_satellite_positions(
         ephemeris = last_nav_data.sel(sv=satellite)
 
         for dt in ranges.time.values:
-            # Get reception time (time when signal arrived at receiver)
-            gps_week, reception_time = datetime_gps_to_week_and_seconds(dt)
-
-            # Get pseudo-range for this time and satellite
-            pseudo_range = ranges.pseudo_range.sel(
-                time=dt, sv=satellite).item()
-
-            # Calculate signal travel time
-            # This is physically correct: travel_time = distance/speed
-            travel_time = pseudo_range / SPEED_OF_LIGHT
-
-            # Calculate transmission time
-            # This is the time when satellite sent the signal (reception_time -
-            # travel_time)
-            transmission_time = reception_time - travel_time
-
             # Calculate satellite position and clock bias at transmission time
-            position, clock_bias = satellite_position_clock_correction(
-                ephemeris, transmission_time)
+            x, y, z, vx, vy, vz, clock_bias = satellite_position_velocity_clock_correction(
+                ephemeris, dt)
 
             # Store results in dataset
-            result['x'].loc[dict(time=dt, sv=satellite)] = position.x
-            result['y'].loc[dict(time=dt, sv=satellite)] = position.y
-            result['z'].loc[dict(time=dt, sv=satellite)] = position.z
-            result['clock_bias'].loc[dict(time=dt, sv=satellite)] = clock_bias
+            result['x'].loc[dt, satellite] = x
+            result['y'].loc[dt, satellite] = y
+            result['z'].loc[dt, satellite] = z
+            result['vx'].loc[dt, satellite] = vx
+            result['vy'].loc[dt, satellite] = vy
+            result['vz'].loc[dt, satellite] = vz
+            result['clock_bias'].loc[dt, satellite] = clock_bias
 
         logger.info(f"Finished computing positions for satellite {satellite}")
 

@@ -1,2 +1,3 @@
 
-from .spacial_plot import plot_coordinates_on_map
+from .latlon import plot_positions_in_latlon
+from .ecef import plot_positions_in_ecef

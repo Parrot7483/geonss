@@ -63,23 +63,21 @@ def apply_ionospheric_correction(
     return corrected_range, medium_weight
 
 
-def apply_tropospheric_correction(
-        pseudo_range: np.float64,
-        elevation_angle_rad: np.float64
+def calculate_tropospheric_delay(
+    elevation_angle_rad: np.float64
 ) -> np.float64:
     """
-    Apply a simple tropospheric correction to pseudo-range measurements using
+    Calculate tropospheric delay based on elevation angle using
     the Niell mapping function for the hydrostatic component.
 
     This is a simplified model that uses only the elevation angle and standard
     atmospheric conditions.
 
     Args:
-        pseudo_range: Uncorrected pseudo-range in meters
         elevation_angle_rad: Satellite elevation angle in radians
 
     Returns:
-        Troposphere-corrected pseudo-range in meters
+        Tropospheric delay in meters
     """
     # Ensure minimum elevation to avoid division by zero
     if elevation_angle_rad <= np.float64(0.05):  # About 3 degrees
@@ -103,10 +101,8 @@ def apply_tropospheric_correction(
     # Calculate tropospheric delay
     tropospheric_delay = zhd * m_h
 
-    # Apply correction (subtract delay from pseudo-range)
-    corrected_pseudo_range = pseudo_range - tropospheric_delay
+    return tropospheric_delay
 
-    return corrected_pseudo_range
 
 # TODO: This can be parallelized
 def calculate_pseudo_ranges(

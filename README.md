@@ -5,7 +5,7 @@
 - [ ] Multi constellation clock bias needs more unknown parameters to be solved (e.g. 5 unknown for double constellation / ISB or GGT)
 - [ ] Receiver clock bias should converge over time and not be calculated for each epoch independently
 - [ ] Add ionospheric correction for single frequency measurements
-- [ ] Clean up pylint
+- [x] Clean up pylint
 - [ ] Refactor rinexmanger, create a class for it
 - [ ] Use Kalman filter for position estimation
 - [ ] Use Dilution of Precision (DOP)

@@ -1,7 +1,7 @@
 from geonss.rinexmanager.util import load_cached_rinex
 from geonss.coordinates import ECEFPosition
 from geonss.constellation import select_constellations
-from geonss import solve_position_solution
+from geonss import single_point_position
 
 import os
 
@@ -17,7 +17,7 @@ def test_solve_position_solution_1():
     navigation = select_constellations(navigation, galileo=True, gps=False)
 
     # Compute positions
-    position_results = solve_position_solution(observation, navigation)
+    position_results = single_point_position(observation, navigation)
 
     # Extract results
     computed_positions = [pos for _, pos, _ in position_results]
@@ -55,7 +55,7 @@ def test_solve_position_solution_2():
     navigation = select_constellations(navigation, galileo=True, gps=False)
 
     # Compute positions
-    position_results = solve_position_solution(observation, navigation)
+    position_results = single_point_position(observation, navigation)
 
     # Extract results
     computed_positions = [pos for _, pos, _ in position_results]

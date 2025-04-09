@@ -15,7 +15,6 @@
       let
         pkgs = import nixpkgs { inherit system; };
         python3 = pkgs.python3;
-        lib = pkgs.lib;
 
         # Required libraries for compiled Python packages (like NumPy)
         pythonLDLibPath = pkgs.lib.makeLibraryPath (with pkgs; [
@@ -29,8 +28,8 @@
           buildInputs = with pkgs; [
             python3
             python3Packages.virtualenv
-            stdenv.cc.cc
-            glibc
+            python3Packages.jupyterlab # Development
+            python3Packages.ipython # Development
           ];
 
           shellHook = ''
@@ -38,7 +37,7 @@
               export VENV_DIR=".venv"
               export PIP_DISABLE_PIP_VERSION_CHECK=1
 
-              export LD_LIBRARY_PATH="${pythonLDLibPath}:$LD_LIBRARY_PATH"
+              export LD_LIBRARY_PATH="${pythonLDLibPath}"
 
               if [ ! -d "$VENV_DIR" ]; then
                 echo "Creating virtual environment in $VENV_DIR..."

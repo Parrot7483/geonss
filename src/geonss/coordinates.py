@@ -39,15 +39,30 @@ class ECEFPosition:
         """Get x position as a numpy float64."""
         return np.float64(self.array[0])
 
+    @x.setter
+    def x(self, value: Union[float, np.floating]) -> None:
+        """Set x position."""
+        self.array[0] = np.float64(value)
+
     @property
     def y(self) -> np.float64:
         """Get y position as a numpy float64."""
         return np.float64(self.array[1])
 
+    @y.setter
+    def y(self, value: Union[float, np.floating]) -> None:
+        """Set y position."""
+        self.array[1] = np.float64(value)
+
     @property
     def z(self) -> np.float64:
         """Get z position as a numpy float64."""
         return np.float64(self.array[2])
+
+    @z.setter
+    def z(self, value: Union[float, np.floating]) -> None:
+        """Set z position."""
+        self.array[2] = (np.float64(value))
 
     @classmethod
     def from_tuple(cls, coordinates: Tuple[float, float, float]) -> 'ECEFPosition':
@@ -112,11 +127,9 @@ class ECEFPosition:
         """Convert to tuple (x, y, z)."""
         return self.x, self.y, self.z
 
-    def distance_to(self, other: 'ECEFPosition') -> float:
+    def distance_to(self, other: 'ECEFPosition') -> np.float64:
         """Calculate the distance to another ECEF position in meters."""
-        return float(np.sqrt((other.x - self.x) ** 2 +
-                             (other.y - self.y) ** 2 +
-                             (other.z - self.z) ** 2))
+        return np.linalg.norm(other.array - self.array)
 
     def horizontal_and_altitude_distance_to(self, other: 'ECEFPosition') -> Tuple[float, float]:
         """
@@ -140,6 +153,7 @@ class ECEFPosition:
         # Use the LLA method to calculate distances
         return self_lla.horizontal_and_altitude_distance_to(other_lla)
 
+    # TODO: Calculate elevation angle directly in ECEF
     def calculate_elevation_angle(self, satellite: 'ECEFPosition') -> np.float64:
         """
         Calculate elevation angle from this position to a satellite.
@@ -303,7 +317,7 @@ class LLAPosition:
         """Convert to tuple (latitude, longitude, altitude)."""
         return self.latitude, self.longitude, self.altitude
 
-    def horizontal_and_altitude_distance_to(self, other: 'LLAPosition') -> Tuple[float, float]:
+    def horizontal_and_altitude_distance_to(self, other: 'LLAPosition') -> Tuple[np.float64, np.float64]:
         """
         Calculate horizontal distance and altitude difference between this position and another.
 
@@ -320,7 +334,7 @@ class LLAPosition:
                 - altitude difference in meters (positive if other is higher than self)
         """
         # Calculate altitude difference directly
-        altitude_diff = float(other.altitude - self.altitude)
+        altitude_diff = other.altitude - self.altitude
 
         # Create zero-altitude positions for horizontal distance calculation
         self_flat = LLAPosition(self.latitude, self.longitude, np.float64(0))
@@ -331,7 +345,7 @@ class LLAPosition:
 
         return horizontal_distance, altitude_diff
 
-    def distance_to(self, other: 'LLAPosition') -> float:
+    def distance_to(self, other: 'LLAPosition') -> np.float64:
         """Calculate the distance to another LLA position in meters."""
         return self.to_ecef().distance_to(other.to_ecef())
 
