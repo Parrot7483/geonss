@@ -1,4 +1,9 @@
 import numpy as np
+import scipy as sp
+# from scipy.spatial.transform import Rotation as R
+# from scipy.spacial.transform import Rotation
+from scipy.spatial.transform import Rotation
+from functools import partial
 
 from geonss.algorithms import *
 from geonss.constellation import *
@@ -23,89 +28,120 @@ def check_gnss_convergence(
     Returns:
         True if solution has converged, False otherwise
     """
-    return np.linalg.norm(parameter_vector_update) < 0.1
+    return np.linalg.norm(parameter_vector_update[:3]) < 0.01
 
 
 def build_gnss_model(
-        parameter_vector: np.ndarray,
-        ranges: xr.Dataset,
-        sat_pos: xr.Dataset
+    parameters: np.ndarray,
+    ranges: xr.Dataset,
+    sat_pos: xr.Dataset,
+    enable_tropospheric_correction: bool = True,
+    enable_earth_rotation_correction: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Build geometry matrix, residuals vector and weights for GNSS positioning.
 
     Args:
-        parameter_vector: Current state vector (position and clock bias)
+        parameters: Current state vector (position and clock bias)
         ranges: Dataset with pseudo ranges and weights
-        sat_pos: Dataset with satellite positions and clock biases
-
+        sat_pos: Dataset with observable positions and clock biases
+        enable_tropospheric_correction: Whether to apply tropospheric correction
+        enable_earth_rotation_correction: Whether to apply Earth rotation correction
     Returns:
         Tuple containing geometry matrix, residuals vector, weights vector
     """
-    # Extract position and clock bias from parameter_vector
-    receiver_pos_array = parameter_vector[:3]
-    clock_bias = parameter_vector[3]
+    # Extract position and clock bias from parameters
+    receiver_pos = ECEFPosition.from_array(parameters[:3])
+    clock_bias = parameters[3]
 
-    # Create ECEFPosition for elevation calculation only
-    receiver_pos = ECEFPosition.from_array(receiver_pos_array)
-
-    geometry_matrix = []
-    residuals = []
-    weights = []
-
-    for satellite in ranges.sv.values:
-        satellite_range = ranges.pseudo_range.sel(sv=satellite).item()
-        snr_weight = ranges.weight.sel(sv=satellite).item()
-        pvc = sat_pos.sel(sv=satellite)
-        sat_clock_bias = pvc['clock_bias'].item()
-
-        if np.isnan(satellite_range):
-            continue
-
-        sat_coords = ECEFPosition(
-            pvc['x'].item(),
-            pvc['y'].item(),
-            pvc['z'].item()
+    # Filter to valid satellites and handle empty case
+    valid_ranges = ranges.dropna(dim="sv", subset=["pseudo_range"])
+    if len(valid_ranges.sv) == 0:
+        return (
+            np.empty((0, 4), dtype=np.float64),
+            np.empty(0, dtype=np.float64),
+            np.empty(0, dtype=np.float64)
         )
 
-        # Calculate signal travel time
-        signal_travel_time = satellite_range / SPEED_OF_LIGHT
+    # Extract data for valid satellites
+    satellite_ranges = valid_ranges.pseudo_range.values
+    weights = valid_ranges.weight.values
+    valid_sat_pos = sat_pos.sel(sv=valid_ranges.sv)
+    sat_clock_biases = valid_sat_pos.clock_bias.values
 
-        # Move the satellite back (from receive time position to transmission time position)
-        sat_coords.x -= pvc['vx'].item() * signal_travel_time
-        sat_coords.y -= pvc['vy'].item() * signal_travel_time
-        sat_coords.z -= pvc['vz'].item() * signal_travel_time
+    # Get satellite positions and velocities
+    sat_positions = valid_sat_pos[["x", "y", "z"]].to_array(dim="coord").transpose("sv", "coord").values
+    sat_velocities = valid_sat_pos[["vx", "vy", "vz"]].to_array(dim="coord").transpose("sv", "coord").values
 
-        # Apply Earth rotation correction to account for Earth's rotation during signal travel
-        theta = -OMEGA_E * signal_travel_time
-        sat_coords.rotate_z(theta)
+    # Calculate positions at transmission time
+    signal_travel_times = satellite_ranges / SPEED_OF_LIGHT
+    corrected_positions = sat_positions - (sat_velocities * signal_travel_times[:, np.newaxis])
 
-        # Calculate elevation angle
-        elevation_angle = receiver_pos.calculate_elevation_angle(sat_coords)
+    # Apply Earth rotation correction if enabled
+    if enable_earth_rotation_correction:
+        thetas = -OMEGA_E * signal_travel_times
+        rotation_vectors = np.outer(thetas, np.array([0, 0, 1]))
+        rotations = Rotation.from_rotvec(rotation_vectors)
+        satellite_positions = rotations.apply(corrected_positions)
+    else:
+        satellite_positions = corrected_positions
 
-        # Apply tropospheric correction
-        satellite_range -= calculate_tropospheric_delay(elevation_angle)
+    # Apply tropospheric correction if enabled
+    if enable_tropospheric_correction:
+        elevation_angles = receiver_pos.elevation_angle(satellite_positions)
+        tropospheric_corrections = calculate_tropospheric_delay(elevation_angles)
+    else:
+        tropospheric_corrections = 0
 
-        # Calculate geometric range and line-of-sight vector using numpy arrays
-        predicted_range = np.linalg.norm(sat_coords.array - receiver_pos.array)
-        line_of_sight = (sat_coords.array - receiver_pos.array) / predicted_range
+    # Calculate geometric ranges and unit vectors
+    displacements = satellite_positions - receiver_pos.array
+    geometric_ranges = np.linalg.norm(displacements, axis=1)
+    unit_vectors = displacements / geometric_ranges[:, np.newaxis]
 
-        # Calculate elevation-based weight (sin²(elevation))
-        elevation_weight = np.square(np.sin(elevation_angle))
-
-        # Combine SNR and elevation weights
-        combined_weight = snr_weight * elevation_weight
-
-        # Update geometry matrix and residuals
-        residuals.append(satellite_range - (predicted_range + clock_bias - sat_clock_bias))
-        geometry_matrix.append([-line_of_sight[0], -line_of_sight[1], -line_of_sight[2], 1])
-        weights.append(combined_weight)
-
-    return (
-        np.array(geometry_matrix, dtype=np.float64),
-        np.array(residuals, dtype=np.float64),
-        np.array(weights, dtype=np.float64)
+    # Calculate residuals with all corrections applied
+    residuals = (
+        satellite_ranges
+        - tropospheric_corrections
+        - clock_bias
+        + sat_clock_biases
+        - geometric_ranges
     )
+
+    # Create geometry matrix
+    geometry_matrix = np.column_stack([
+        -unit_vectors,
+        np.ones(len(valid_ranges.sv))
+    ])
+
+    return geometry_matrix, residuals, weights
+
+
+def prepare_ranges_satellite_positions(observation: xr.Dataset, navigation: xr.Dataset) -> Tuple[xr.Dataset, xr.Dataset]:
+    """
+    Prepare data by selecting common satellites and calculating ranges and positions.
+
+    Args:
+        observation: Dataset containing GNSS observations
+        navigation: Dataset containing navigation messages
+
+    Returns:
+        Tuple of (ranges, observable positions)
+    """
+    # Select common satellites
+    logger.info("Selecting common satellites between observation and navigation data")
+    common_satellites = get_common_satellites(observation, navigation)
+    observation = select_satellites(observation, common_satellites)
+    navigation = select_satellites(navigation, common_satellites)
+
+    # Calculate pseudo ranges
+    logger.info("Calculating pseudo ranges")
+    ranges = calculate_pseudo_ranges(observation)
+
+    # Calculate observable positions
+    logger.info("Calculating observable positions")
+    sat_pos = calculate_satellite_positions(navigation, ranges)
+
+    return ranges, sat_pos
 
 
 def single_point_position(
@@ -120,7 +156,7 @@ def single_point_position(
 
     This function:
     1. Prepares the input data (selects common satellites)
-    2. Calculates pseudo ranges and satellite positions
+    2. Calculates pseudo ranges and observable positions
     3. Iteratively solves for receiver position at each time step
 
     Args:
@@ -132,25 +168,16 @@ def single_point_position(
     Returns:
         List of tuples (timestamp, position, clock_bias) for each successful time step
     """
-    # Select common satellites
-    logger.info(
-        "Selecting common satellites between observation and navigation data")
-    common_satellites = get_common_satellites(observation, navigation)
-    observation = select_satellites(observation, common_satellites)
-    navigation = select_satellites(navigation, common_satellites)
-
-    # Calculate pseudo ranges
-    logger.info("Calculating pseudo ranges")
-    ranges = calculate_pseudo_ranges(observation)
-
-    # Calculate satellite positions
-    logger.info("Calculating satellite positions")
-    sat_pos = calculate_satellite_positions(navigation, ranges)
+    ranges, sat_pos = prepare_ranges_satellite_positions(observation, navigation)
 
     # Compute position for each time step
     logger.info(
         f"Computing receiver positions for {len(observation.time.values)} time steps"
     )
+
+    # Create initial parameter vector (position and clock bias)
+    initial_state = np.array([*a_priori_position.array, a_priori_clock_bias], dtype=np.float64)
+
     positions = []
 
     for t in observation.time.values:
@@ -163,18 +190,27 @@ def single_point_position(
             if len([r for r in ranges_t.pseudo_range.values if not np.isnan(r)]) < 4:
                 raise ValueError("Not enough pseudo-ranges to compute position")
 
-            # Create initial parameter vector (position and clock bias)
-            initial_state = np.array([*a_priori_position.array, a_priori_clock_bias], dtype=np.float64)
-
-            # Solve using sequential least squares
-            final_state = iterative_weighted_least_squares(
+            # Find approximate position using Iterative Least Squares (ILS) without corrections
+            intermediate_state = iterative_least_squares(
                 initial_state=initial_state,
-                build_model_fn=build_gnss_model,
-                check_convergence_fn=check_gnss_convergence,
-                max_iterations=10,
+                model_fn=build_gnss_model,
+                iterations=3,
+                ranges=ranges_t,
+                sat_pos=sat_pos_t,
+                enable_tropospheric_correction = False,
+                enable_earth_rotation_correction = False,
+            )
+
+            # Refine solution with Iterative Reweighted Least Squares (IRLS)
+            final_state = iterative_reweighted_least_squares(
+                initial_state=intermediate_state,
+                model_fn=build_gnss_model,
+                loss_fn=huber_weight,
+                convergence_fn=check_gnss_convergence,
+                max_iterations=3,
                 damping_factor=np.float64(0.01),
                 ranges=ranges_t,
-                sat_pos=sat_pos_t
+                sat_pos=sat_pos_t,
             )
 
             # Convert final parameter_vector back to expected return format

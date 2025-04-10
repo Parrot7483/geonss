@@ -28,10 +28,11 @@ class ECEFPosition:
     """
 
     def __init__(self,
-                 x: Union[float, np.floating] = 0,
-                 y: Union[float, np.floating] = 0,
-                 z: Union[float, np.floating] = 0
-                 ):
+        x: Union[float, np.floating] = 0,
+        y: Union[float, np.floating] = 0,
+        z: Union[float, np.floating] = 0
+    ):
+        assert np.isfinite(x) and np.isfinite(y) and np.isfinite(z), "ECEF coordinates must be finite numbers"
         self.array = np.array([x, y, z], dtype=np.float64)
 
     @property
@@ -72,11 +73,33 @@ class ECEFPosition:
     @classmethod
     def from_array(cls, array: np.ndarray) -> 'ECEFPosition':
         """Create an ECEF position from a numpy array [x, y, z]."""
+        assert array.shape == (3,), f"ECEF position array must have shape (3,), got {array.shape}"
         return cls(np.float64(array[0]), np.float64(array[1]), np.float64(array[2]))
+
+    # TODO: Maybe it is possible to make this the default behavior. Could make it faster
+    @classmethod
+    def wrap_array(cls, array: np.ndarray) -> 'ECEFPosition':
+        """
+        Create an ECEF position by directly referencing the provided numpy array.
+
+        WARNING: Changes to the original array will affect this position object.
+
+        Args:
+            array: Numpy array with shape (3,) containing [x, y, z] coordinates
+
+        Returns:
+            ECEF position object referencing the provided array
+        """
+        assert array.shape == (3,), f"ECEF position array must have shape (3,), got {array.shape}"
+        assert array.dtype == np.float64, f"Array must be of dtype np.float64, got {array.dtype}"
+        position = cls.__new__(cls)
+        position.array = array
+        return position
 
     @classmethod
     def from_positions_list_mean(cls, positions: List['ECEFPosition']) -> 'ECEFPosition':
         """Calculate the mean position given a list of ECEFPosition objects."""
+        # assert len(positions) > 0, "Cannot calculate mean of empty positions list"
         x_mean = np.mean([p.x for p in positions])
         y_mean = np.mean([p.y for p in positions])
         z_mean = np.mean([p.z for p in positions])
@@ -153,45 +176,54 @@ class ECEFPosition:
         # Use the LLA method to calculate distances
         return self_lla.horizontal_and_altitude_distance_to(other_lla)
 
-    # TODO: Calculate elevation angle directly in ECEF
-    def calculate_elevation_angle(self, satellite: 'ECEFPosition') -> np.float64:
+    def elevation_angle(self, observable: Union['ECEFPosition', np.ndarray]) -> Union[np.float64, np.ndarray]:
         """
-        Calculate elevation angle from this position to a satellite.
+        Calculate elevation angle from this position to one or multiple observables.
 
         Args:
-            satellite: Satellite position
+            observable: Single ECEFPosition or numpy array of shape (n, 3) with ECEF coordinates
 
         Returns:
-            Elevation angle in radians
+            Elevation angle(s) in radians - single value or numpy array
         """
-        # Convert receiver position to LLA for reference frame
-        receiver_lla = self.to_lla()
+        # Convert to LLA to get geodetic coordinates
+        lla = self.to_lla()
+        lat_rad = np.radians(lla.latitude)
+        lon_rad = np.radians(lla.longitude)
 
-        # Calculate local tangent plane vectors
-        lat_rad = np.radians(receiver_lla.latitude)
-        lon_rad = np.radians(receiver_lla.longitude)
+        # Create the local East-North-Up (ENU) rotation matrix
+        sin_lat, cos_lat = np.sin(lat_rad), np.cos(lat_rad)
+        sin_lon, cos_lon = np.sin(lon_rad), np.cos(lon_rad)
 
-        # Up vector in ECEF
-        up = np.array([
-            np.cos(lat_rad) * np.cos(lon_rad),
-            np.cos(lat_rad) * np.sin(lon_rad),
-            np.sin(lat_rad)
+        # Rotation matrix from ECEF to ENU
+        rotation = np.array([
+            [-sin_lon, cos_lon, 0],
+            [-sin_lat * cos_lon, -sin_lat * sin_lon, cos_lat],
+            [cos_lat * cos_lon, cos_lat * sin_lon, sin_lat]
         ])
 
-        # Calculate vector from receiver to satellite
-        sat_receiver_vector = satellite.array - self.array
+        # Handle both single ECEFPosition and numpy array of coordinates
+        if isinstance(observable, ECEFPosition):
+            vector_ecef = observable.array - self.array
+            vector_ecef = vector_ecef.reshape(1, 3)
+        else:
+            # Assume observable is a numpy array of shape (n, 3)
+            vector_ecef = observable - self.array.reshape(1, 3)
 
-        # Normalize vector
-        los_length = np.linalg.norm(sat_receiver_vector)
-        if los_length == 0:
-            return np.float64(np.pi / 2)  # 90 degrees if same position
+        # Apply rotation to each vector
+        vector_enu = rotation @ vector_ecef.T  # shape becomes (3, n)
 
-        los_unit = sat_receiver_vector / los_length
+        # Calculate horizontal distance for each vector
+        horizontal_distance = np.sqrt(vector_enu[0]**2 + vector_enu[1]**2)
 
-        # Calculate elevation angle (angle between los_unit and up)
-        elevation_angle_rad = np.arcsin(np.dot(los_unit, up))
+        # Calculate elevation angles
+        elevations = np.arctan2(vector_enu[2], horizontal_distance)
 
-        return elevation_angle_rad
+        # If input was a single position, return a scalar
+        if isinstance(observable, ECEFPosition) or observable.shape[0] == 1:
+            return np.float64(elevations[0])
+
+        return elevations
 
     def rotate_z(self, angle: float) -> 'ECEFPosition':
         """
@@ -262,10 +294,13 @@ class LLAPosition:
     """
 
     def __init__(self,
-                 latitude: Union[float, np.floating] = 0,
-                 longitude: Union[float, np.floating] = 0,
-                 altitude: Union[float, np.floating] = 0
-                 ):
+        latitude: Union[float, np.floating] = 0,
+        longitude: Union[float, np.floating] = 0,
+        altitude: Union[float, np.floating] = 0
+    ):
+        assert -90 <= latitude <= 90, f"Latitude must be between -90 and 90 degrees, got {latitude}"
+        assert -180 <= longitude <= 180, f"Longitude must be between -180 and 180 degrees, got {longitude}"
+        assert np.isfinite(altitude), f"Altitude must be a finite number, got {altitude}"
         self.array = np.array([latitude, longitude, altitude], dtype=np.float64)
 
     @property
@@ -291,6 +326,7 @@ class LLAPosition:
     @classmethod
     def from_array(cls, array: np.ndarray) -> 'LLAPosition':
         """Create an LLA position from a numpy array [latitude, longitude, altitude]."""
+        assert array.shape == (3,), f"LLA position array must have shape (3,), got {array.shape}"
         return cls(np.float64(array[0]), np.float64(array[1]), np.float64(array[2]))
 
     @classmethod

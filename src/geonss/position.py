@@ -10,13 +10,17 @@ It includes:
 - Iterative positioning algorithms
 
 The module implements standard GNSS positioning techniques including ionosphere-free combinations,
-signal weighting based on SNR, and satellite position interpolation to handle transmission time effects.
+signal weighting based on SNR, and observable position interpolation to handle transmission time effects.
 """
+import logging
+
 import numpy as np
 
 from geonss.filter import *
+from geonss.constellation import *
+from geonss.coordinates import *
 from geonss.rinexmanager.util import *
-from geonss.single_point_position import single_point_position
+from geonss.single_point_position import *
 from geonss.plotting import plot_positions_in_latlon, plot_positions_in_ecef
 
 logger = logging.getLogger(__name__)
@@ -51,6 +55,7 @@ def analyze_and_print_positions(positions, true_position):
     print(f"Real: {true_position_lla}; {true_position_lla.google_maps_link()}")
 
 
+
 def main():
     # Set logging detail
     logging.basicConfig(level=logging.INFO)
@@ -61,7 +66,10 @@ def main():
     # Load data
     observation = load_cached_rinex(os.path.join(project_root, "tests/data/GEOP057V.25o"))
     navigation = load_cached_navigation_message(datetime(2025, 2, 26), "WTZR00DEU")
-    navigation = select_constellations(navigation, galileo=True, gps=True)
+    navigation = select_constellations(navigation, galileo=True, gps=False)
+
+    # Only use a subset of the data for testing
+    observation = observation.isel(time=np.random.choice(len(observation.time), size=100, replace=False))
 
     # Load data
     # observation = load_cached_rinex(os.path.join(project_root, "tests/data/GEOP085R.25o"))

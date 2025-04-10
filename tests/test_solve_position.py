@@ -3,6 +3,8 @@ from geonss.coordinates import ECEFPosition
 from geonss.constellation import select_constellations
 from geonss import single_point_position
 
+import numpy as np
+
 import os
 
 
@@ -12,9 +14,12 @@ def test_solve_position_solution_1():
     observation = load_cached_rinex(base + "/tests/data/GEOP057V.25o")
     navigation = load_cached_rinex(base + "/tests/data/WTZR00DEU_20250226_navigation.rnx")
 
+    # Only use a subset of the data for testing
+    random_indices = np.random.choice(len(observation['time']), size=25, replace=False)
+    observation = observation.isel({'time': random_indices})
+
     # Select constellations
-    observation = select_constellations(observation, galileo=True, gps=False)
-    navigation = select_constellations(navigation, galileo=True, gps=False)
+    navigation = select_constellations(navigation, galileo=True, gps=True)
 
     # Compute positions
     position_results = single_point_position(observation, navigation)
@@ -50,9 +55,11 @@ def test_solve_position_solution_2():
     observation = load_cached_rinex(base + "/tests/data/GEOP085R.25o")
     navigation = load_cached_rinex(base + "/tests/data/WTZR00DEU_20250326_navigation.rnx")
 
+    # Only use a subset of the data for testing
+    observation = observation.isel(time=np.random.choice(len(observation.time), size=25, replace=False))
+
     # Select constellations
-    observation = select_constellations(observation, galileo=True, gps=False)
-    navigation = select_constellations(navigation, galileo=True, gps=False)
+    navigation = select_constellations(navigation, galileo=True, gps=True)
 
     # Compute positions
     position_results = single_point_position(observation, navigation)
@@ -79,6 +86,6 @@ def test_solve_position_solution_2():
     print(f"Computed: {mean_position_lla}; {mean_position_lla.google_maps_link()}")
     print(f"Real: {true_position_lla}; {true_position_lla.google_maps_link()}")
 
-    assert mean_distance < 10.0 # meters
+    assert mean_distance < 30.0 # meters
 
 

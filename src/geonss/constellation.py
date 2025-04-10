@@ -4,8 +4,8 @@ GNSS Constellation Management Module
 
 This module provides functionality for working with GNSS (Global Navigation Satellite System) constellations.
 It includes:
-- Constellation enum for identifying different satellite systems
-- Functions for mapping satellite IDs to their respective constellations
+- Constellation enum for identifying different observable systems
+- Functions for mapping observable IDs to their respective constellations
 - Filtering capabilities for processing datasets based on constellation types
 
 The module supports major GNSS systems including:
@@ -44,14 +44,14 @@ class Constellation(Enum):
 
 def get_common_satellites(dataset_a: xr.Dataset, dataset_b: xr.Dataset) -> list[str]:
     """
-    Find satellite IDs that exist in both datasets.
+    Find observable IDs that exist in both datasets.
 
     Args:
-        dataset_a: First dataset containing 'sv' coordinate with satellite IDs
-        dataset_b: Second dataset containing 'sv' coordinate with satellite IDs
+        dataset_a: First dataset containing 'sv' coordinate with observable IDs
+        dataset_b: Second dataset containing 'sv' coordinate with observable IDs
 
     Returns:
-        list[str]: List of satellite IDs present in both datasets
+        list[str]: List of observable IDs present in both datasets
     """
     sats_a = dataset_a['sv'].values.tolist()
     sats_b = dataset_b['sv'].values.tolist()
@@ -60,13 +60,13 @@ def get_common_satellites(dataset_a: xr.Dataset, dataset_b: xr.Dataset) -> list[
 
 def get_constellation(satellite_id: str) -> Constellation:
     """
-    Maps a satellite identifier to its constellation.
+    Maps a observable identifier to its constellation.
 
     Args:
         satellite_id: Satellite ID in format [A-Z]\\d{2} (e.g. G01, R24, E11)
 
     Returns:
-        The constellation enum for the satellite
+        The constellation enum for the observable
     """
     if not isinstance(satellite_id, str) or len(satellite_id) != 3 or not satellite_id[1:].isdigit():
         return Constellation.UNKNOWN
@@ -101,7 +101,7 @@ def select_constellations(
 
     Args:
         df : xarray.Dataset or xarray.DataArray
-            Input data containing satellite identifiers in a 'sv' coordinate/variable
+            Input data containing observable identifiers in a 'sv' coordinate/variable
         galileo : bool, optional
             If True, keep Galileo satellites (prefix 'E'), by default False
         gps : bool, optional
@@ -113,7 +113,7 @@ def select_constellations(
         sbas : bool, optional
             If True, keep SBAS satellites (prefix 'S'), by default False
         underscores : bool, optional
-            If True, remove entries containing underscores in satellite ID, by default False
+            If True, remove entries containing underscores in observable ID, by default False
 
     Returns:
         xarray.Dataset or xarray.DataArray
@@ -146,9 +146,9 @@ def select_satellites(
 
     Args:
         df : xarray.Dataset or xarray.DataArray
-            Input data containing satellite identifiers in a 'sv' coordinate/variable
+            Input data containing observable identifiers in a 'sv' coordinate/variable
         sv_list : list[str]
-            List of satellite IDs to keep (e.g., ['G01', 'R24', 'E11'])
+            List of observable IDs to keep (e.g., ['G01', 'R24', 'E11'])
 
     Returns:
         xarray.Dataset or xarray.DataArray

@@ -9,7 +9,7 @@ It includes functions for converting between different time systems and formats:
 - Handling of leap seconds
 - Conversion between different datetime representations
 
-The module supports precise time calculations necessary for satellite positioning
+The module supports precise time calculations necessary for observable positioning
 and navigation applications.
 """
 
@@ -49,7 +49,7 @@ def datetime_gps_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime,
 
     return gps_week, seconds_of_week
 
-def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime, str]) -> Tuple[np.int32, np.float64]:
+def datetime_utc_to_datetime_gps(dt: Union[np.datetime64, datetime.datetime, str]) -> np.datetime64:
     """
     Convert UTC time to GPS time.
 
@@ -62,7 +62,7 @@ def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime,
                   or as an ISO format string (e.g., "2023-05-24T12:34:56Z")
 
     Returns:
-        Tuple[int, np.float64]: GPS week number and seconds of week
+        np.datetime64: GPS datetime
     """
 
     # Leap seconds table (UTC - GPS) as of April 2025
@@ -109,5 +109,25 @@ def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime,
     # Create a GPS time by adding the leap seconds to UTC
     gps_time = dt + np.timedelta64(leap_second_offset, 's')
 
-    # Use the helper function to get GPS week and seconds of week
-    return datetime_gps_to_week_and_seconds(gps_time)
+    return gps_time
+
+def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime, str]) -> Tuple[np.int32, np.float64]:
+        """
+        Convert UTC time to GPS week and seconds of week.
+
+        GPS time started at 00:00:00 January 6, 1980, UTC with 0 leap seconds.
+        GPS time does not include leap seconds, so the difference between
+        UTC and GPS time increases with each leap second addition.
+
+        Args:
+            dt: UTC time as a datetime object, numpy datetime64 object,
+                      or as an ISO format string (e.g., "2023-05-24T12:34:56Z")
+
+        Returns:
+            Tuple[np.int32, np.float64]: GPS week number and seconds of week
+        """
+        # First convert UTC to GPS time
+        gps_time = datetime_utc_to_datetime_gps(dt)
+
+        # Then extract GPS week and seconds
+        return datetime_gps_to_week_and_seconds(gps_time)

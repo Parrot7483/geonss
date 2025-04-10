@@ -2,15 +2,15 @@
 """
 GNSS Navigation and Satellite Positioning Module
 
-This module provides utilities for handling ephemeris data and calculating satellite positions.
+This module provides utilities for handling ephemeris data and calculating observable positions.
 It includes functions for:
 - Processing GNSS navigation/ephemeris messages
-- Computing satellite positions in Earth-Centered Earth-Fixed (ECEF) coordinates
-- Applying satellite clock corrections
+- Computing observable positions in Earth-Centered Earth-Fixed (ECEF) coordinates
+- Applying observable clock corrections
 - Calculating orbital parameters from broadcast ephemeris
-- Handling relativistic effects in satellite positioning
+- Handling relativistic effects in observable positioning
 
-The module implements algorithms for precise satellite position calculation
+The module implements algorithms for precise observable position calculation
 based on the WGS-84 reference frame and GNSS constellation parameters.
 """
 
@@ -28,14 +28,14 @@ logger = logging.getLogger(__name__)
 
 def get_last_nav_messages(nav_data: xr.Dataset, dt: np.datetime64) -> xr.Dataset:
     """
-    Get the last valid ephemeris message for each satellite before a given time.
+    Get the last valid ephemeris message for each observable before a given time.
 
     Parameters:
         nav_data: Navigation dataset with dimensions 'time' and 'sv'
         dt: Target datetime to filter messages
 
     Returns:
-        Dataset containing the last valid message for each satellite
+        Dataset containing the last valid message for each observable
     """
     # Filter times up to dt
     nav_filtered = nav_data.sel(time=slice(None, dt))
@@ -43,9 +43,9 @@ def get_last_nav_messages(nav_data: xr.Dataset, dt: np.datetime64) -> xr.Dataset
     # Create empty list to store valid messages
     valid_messages = []
 
-    # Process each satellite
+    # Process each observable
     for sv in nav_filtered.sv:
-        # Get data for current satellite
+        # Get data for current observable
         sv_data = nav_filtered.sel(sv=sv)
 
         # Drop times when any required field is NaN
@@ -67,12 +67,12 @@ def satellite_position_velocity_clock_correction(
         dt: np.datetime64
 ) -> Tuple[np.float64, np.float64, np.float64, np.float64, np.float64, np.float64, np.float64]:
     """
-    Function to compute satellite position (ECEF), velocity (ECEF),
+    Function to compute observable position (ECEF), velocity (ECEF),
     and clock correction using individual ephemeris parameters.
 
     Parameters:
         ephemeris (xarray.Dataset): Dataset containing broadcast ephemeris parameters
-        dt (numpy.datetime64: Time for which to compute the satellite position
+        dt (numpy.datetime64: Time for which to compute the observable position
 
     Returns:
         Tuple[np.float64, np.float64, np.float64, np.float64, np.float64, np.float64, np.float64]:
@@ -126,7 +126,7 @@ def satellite_position_velocity_clock_correction(
         cos_e - e
     )
 
-    # Argument of latitude (phi) - the angle from the ascending node to the satellite position
+    # Argument of latitude (phi) - the angle from the ascending node to the observable position
     phi = v + omega
 
     # Calculate sine and cosine of 2 * phi for harmonic correction terms
@@ -200,7 +200,7 @@ def satellite_position_velocity_clock_correction(
 
     vz = y_prime_dot * sin_i + y_prime * cos_i * i_dot
 
-    # Extract satellite clock parameters from ephemeris data
+    # Extract observable clock parameters from ephemeris data
     t_oc = ephemeris.time.values
     a0 = ephemeris['SVclockBias'].item()
     a1 = ephemeris['SVclockDrift'].item()
@@ -212,7 +212,7 @@ def satellite_position_velocity_clock_correction(
     # Relativistic clock correction
     delta_tr = REL_CONST * np.power(e, sqrt_a) * np.sin(e_anom)
 
-    # Calculate satellite clock correction
+    # Calculate observable clock correction
     delta_t_oc = gps_seconds - seconds_of_clock
     delta_t_sv = a0 + a1 * delta_t_oc + a2 * np.square(delta_t_oc) + delta_tr
     delta_t_sv_m = delta_t_sv * SPEED_OF_LIGHT
@@ -225,25 +225,25 @@ def calculate_satellite_positions(
         ranges: xr.Dataset
 ) -> xr.Dataset:
     """
-    Calculate satellite positions and clock biases for each observation.
+    Calculate observable positions and clock biases for each observation.
 
-    This function determines satellite positions at signal transmission time
+    This function determines observable positions at signal transmission time
     by using navigation messages and correcting for signal travel time.
-    For each time and satellite, it:
+    For each time and observable, it:
     1. Estimates signal transmission time based on pseudo range
-    2. Computes satellite position and clock bias at transmission time
+    2. Computes observable position and clock bias at transmission time
     3. Stores results in an organized dataset
 
     Args:
         nav_data: Navigation messages dataset containing ephemeris data
-        ranges: Dataset with pseudo ranges and time/satellite coordinates
+        ranges: Dataset with pseudo ranges and time/observable coordinates
 
     Returns:
-        Dataset containing satellite positions (x, y, z) coordinates and
-        clock bias for each time and satellite
+        Dataset containing observable positions (x, y, z) coordinates and
+        clock bias for each time and observable
     """
     logger.info(
-        f"Starting to compute {len(ranges.sv.values)} satellite positions for {len(ranges.time.values)} time steps")
+        f"Starting to compute {len(ranges.sv.values)} observable positions for {len(ranges.time.values)} time steps")
 
     # Initialize result dataset with time and sv coordinates from pseudo ranges
     result = xr.Dataset(
@@ -300,11 +300,11 @@ def calculate_satellite_positions(
     last_nav_data = get_last_nav_messages(nav_data, ranges.time.values[0])
 
     for satellite in ranges.sv.values:
-        # Get ephemeris data for this satellite
+        # Get ephemeris data for this observable
         ephemeris = last_nav_data.sel(sv=satellite)
 
         for dt in ranges.time.values:
-            # Calculate satellite position and clock bias at transmission time
+            # Calculate observable position and clock bias at transmission time
             x, y, z, vx, vy, vz, clock_bias = satellite_position_velocity_clock_correction(
                 ephemeris, dt)
 
@@ -317,6 +317,6 @@ def calculate_satellite_positions(
             result['vz'].loc[dt, satellite] = vz
             result['clock_bias'].loc[dt, satellite] = clock_bias
 
-        logger.info(f"Finished computing positions for satellite {satellite}")
+        logger.info(f"Finished computing positions for observable {satellite}")
 
     return result

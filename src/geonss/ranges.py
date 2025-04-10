@@ -9,7 +9,7 @@ GNSS observations. It includes:
 - Consolidated pseudo-range calculation from raw observations
 """
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Union
 
 from geonss.rinexmanager.util import *
 
@@ -64,27 +64,33 @@ def apply_ionospheric_correction(
 
 
 def calculate_tropospheric_delay(
-    elevation_angle_rad: np.float64
-) -> np.float64:
+    elevation_angle: Union[np.float64, np.ndarray]
+) -> Union[np.float64, np.ndarray]:
     """
     Calculate tropospheric delay based on elevation angle using
     the Niell mapping function for the hydrostatic component.
+
+    Vectorized implementation that can handle both single values and arrays.
 
     This is a simplified model that uses only the elevation angle and standard
     atmospheric conditions.
 
     Args:
-        elevation_angle_rad: Satellite elevation angle in radians
+        elevation_angle: Satellite elevation angle(s) in radians
 
     Returns:
-        Tropospheric delay in meters
+        Tropospheric delay(s) in meters
     """
-    # Ensure minimum elevation to avoid division by zero
-    if elevation_angle_rad <= np.float64(0.05):  # About 3 degrees
-        elevation_angle_rad = np.float64(0.05)
+    # Create a view that can be modified without changing the original
+    min_elevation = np.float64(0.05)  # About 3 degrees
 
-    # Calculate sine of elevation
-    sin_elev = np.sin(elevation_angle_rad)
+    # Handle array input and apply minimum elevation threshold
+    if isinstance(elevation_angle, np.ndarray):
+        # Use masked array to handle minimum elevation without copying
+        sin_elev = np.sin(np.maximum(elevation_angle, min_elevation))
+    else:
+        # Single value case
+        sin_elev = np.sin(max(elevation_angle, min_elevation))
 
     # Parameters for simplified Niell hydrostatic mapping function
     a = np.float64(1.2769934e-3)
@@ -95,13 +101,10 @@ def calculate_tropospheric_delay(
     m_h = np.float64(1.0) / (sin_elev + (a / (sin_elev + b / (sin_elev + c))))
 
     # Approximate zenith hydrostatic delay (ZHD) at standard conditions
-    # Using average value of approximately 2.3 meters at sea level
     zhd = np.float64(2.3)
 
     # Calculate tropospheric delay
-    tropospheric_delay = zhd * m_h
-
-    return tropospheric_delay
+    return zhd * m_h
 
 
 # TODO: This can be parallelized
@@ -115,7 +118,7 @@ def calculate_pseudo_ranges(
         obs_data: Dataset containing GNSS observations with C1C and C5Q measurements
 
     Returns:
-        Dataset containing pseudo pseudo_ranges and SNR weights for each time and satellite
+        Dataset containing pseudo pseudo_ranges and SNR weights for each time and observable
     """
     ranges = xr.Dataset(
         coords={

@@ -1,4 +1,4 @@
-from geonss.time import datetime_utc_to_week_and_seconds
+from geonss.time import datetime_utc_to_datetime_gps
 from geonss.position import *
 from geonss.navigation import satellite_position_velocity_clock_correction, get_last_nav_messages
 
@@ -12,12 +12,11 @@ def test_solve_satellite_position_1():
 
     navigation = select_satellites(navigation, ['G01'])
 
-    time = np.datetime64('2025-02-26T21:42:00')
+    time = datetime_utc_to_datetime_gps(np.datetime64('2025-02-26T21:42:00'))
 
     ephemeris = get_last_nav_messages(navigation, time).sel(sv='G01')
-    week, seconds = datetime_utc_to_week_and_seconds(time)
 
-    x, y, z, _, _, _, _, = satellite_position_velocity_clock_correction(ephemeris, seconds)
+    x, y, z, _, _, _, _, = satellite_position_velocity_clock_correction(ephemeris, time)
     computed_position = ECEFPosition(x, y, z)
 
     # TODO: Get correct values
