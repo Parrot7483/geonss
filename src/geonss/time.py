@@ -131,3 +131,25 @@ def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime,
 
         # Then extract GPS week and seconds
         return datetime_gps_to_week_and_seconds(gps_time)
+
+
+# Function that given a np.datetime64 return the day of year
+def datetime_to_day_of_year(dt: Union[np.datetime64, datetime.datetime]) -> int:
+    """
+    Convert a datetime object to the day of the year.
+
+    Args:
+        dt: Datetime object (Python or numpy)
+
+    Returns:
+        int: Day of the year (1-366)
+    """
+    # Convert input to numpy.datetime64 if it's not already
+    if isinstance(dt, str) or isinstance(dt, datetime.datetime):
+        dt = np.datetime64(dt)
+
+    # Get the start of the year
+    start_of_year = np.datetime64(str(dt)[:4] + "-01-01T00:00:00")
+
+    # Calculate and return the day of the year
+    return int((dt - start_of_year) / np.timedelta64(1, 'D')) + 1

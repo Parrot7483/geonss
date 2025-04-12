@@ -30,6 +30,9 @@
             python3Packages.virtualenv
             python3Packages.jupyterlab # Development
             python3Packages.ipython # Development
+
+            # Added for binary compatibility
+            autoPatchelfHook
           ];
 
           shellHook = ''
@@ -50,6 +53,16 @@
               echo "Installing and upgrading dependencies..."
               pip install --quiet --disable-pip-version-check --upgrade -r ${requirements}
               pip install --quiet --disable-pip-version-check -e .
+
+
+              # Specifically patch the crx2rnx binary if it exists
+              HATANAKA_BIN="$VENV_DIR/lib/python3.12/site-packages/hatanaka/bin/crx2rnx"
+              if [ -f "$HATANAKA_BIN" ]; then
+                echo "Patching $HATANAKA_BIN"
+                autoPatchelf "$HATANAKA_BIN" || true
+                chmod +x "$HATANAKA_BIN"
+              fi
+
           '';
         };
       }

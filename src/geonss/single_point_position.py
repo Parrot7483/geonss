@@ -1,9 +1,4 @@
-import numpy as np
-import scipy as sp
-# from scipy.spatial.transform import Rotation as R
-# from scipy.spacial.transform import Rotation
 from scipy.spatial.transform import Rotation
-from functools import partial
 
 from geonss.algorithms import *
 from geonss.constellation import *
@@ -37,6 +32,8 @@ def build_gnss_model(
     sat_pos: xr.Dataset,
     enable_tropospheric_correction: bool = True,
     enable_earth_rotation_correction: bool = True,
+    enable_signal_travel_time_correction: bool = True,
+    enable_elevation_mask: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Build geometry matrix, residuals vector and weights for GNSS positioning.
@@ -47,11 +44,15 @@ def build_gnss_model(
         sat_pos: Dataset with observable positions and clock biases
         enable_tropospheric_correction: Whether to apply tropospheric correction
         enable_earth_rotation_correction: Whether to apply Earth rotation correction
+        enable_signal_travel_time_correction: Whether to apply signal travel time correction
+        enable_elevation_mask: Whether to apply elevation mask of 15 degrees
     Returns:
         Tuple containing geometry matrix, residuals vector, weights vector
     """
     # Extract position and clock bias from parameters
+    time = ranges.time.values
     receiver_pos = ECEFPosition.from_array(parameters[:3])
+    receiver_pos_lla = receiver_pos.to_lla()
     clock_bias = parameters[3]
 
     # Filter to valid satellites and handle empty case
@@ -73,9 +74,14 @@ def build_gnss_model(
     sat_positions = valid_sat_pos[["x", "y", "z"]].to_array(dim="coord").transpose("sv", "coord").values
     sat_velocities = valid_sat_pos[["vx", "vy", "vz"]].to_array(dim="coord").transpose("sv", "coord").values
 
-    # Calculate positions at transmission time
+    # Calculate signal travel times
     signal_travel_times = satellite_ranges / SPEED_OF_LIGHT
-    corrected_positions = sat_positions - (sat_velocities * signal_travel_times[:, np.newaxis])
+
+    # Apply signal travel time correction if enabled
+    if enable_signal_travel_time_correction:
+        corrected_positions = sat_positions - (sat_velocities * signal_travel_times[:, np.newaxis])
+    else:
+        corrected_positions = sat_positions
 
     # Apply Earth rotation correction if enabled
     if enable_earth_rotation_correction:
@@ -86,10 +92,16 @@ def build_gnss_model(
     else:
         satellite_positions = corrected_positions
 
+    # Calculate elevation angles
+    elevation_angles = receiver_pos.elevation_angle(satellite_positions)
+
     # Apply tropospheric correction if enabled
     if enable_tropospheric_correction:
-        elevation_angles = receiver_pos.elevation_angle(satellite_positions)
-        tropospheric_corrections = calculate_tropospheric_delay(elevation_angles)
+        tropospheric_corrections = tropospheric_delay(
+            time,
+            elevation_angles,
+            receiver_pos_lla.altitude,
+            receiver_pos_lla.latitude)
     else:
         tropospheric_corrections = 0
 
@@ -106,6 +118,17 @@ def build_gnss_model(
         + sat_clock_biases
         - geometric_ranges
     )
+
+    # Sin of elevation angle gives better weighting that increases with elevation
+    elevation_weights = np.sin(elevation_angles)
+
+    if enable_elevation_mask:
+        # Apply elevation mask (exclude satellites below 15°)
+        elevation_mask = elevation_angles > np.radians(15)
+        elevation_weights = np.where(elevation_mask, elevation_weights, 0.0)
+
+    # Apply elevation weights to SNR weights
+    weights *= elevation_weights
 
     # Create geometry matrix
     geometry_matrix = np.column_stack([
@@ -199,6 +222,7 @@ def single_point_position(
                 sat_pos=sat_pos_t,
                 enable_tropospheric_correction = False,
                 enable_earth_rotation_correction = False,
+                enable_elevation_mask = False,
             )
 
             # Refine solution with Iterative Reweighted Least Squares (IRLS)
@@ -207,8 +231,9 @@ def single_point_position(
                 model_fn=build_gnss_model,
                 loss_fn=huber_weight,
                 convergence_fn=check_gnss_convergence,
-                max_iterations=3,
+                max_iterations=4,
                 damping_factor=np.float64(0.01),
+                min_measurements=4,
                 ranges=ranges_t,
                 sat_pos=sat_pos_t,
             )

@@ -21,7 +21,7 @@ from geonss.constellation import *
 from geonss.coordinates import *
 from geonss.rinexmanager.util import *
 from geonss.single_point_position import *
-from geonss.plotting import plot_positions_in_latlon, plot_positions_in_ecef
+from geonss.plotting import plot_positions_in_latlon, plot_positions_in_ecef, plot_altitude_differences
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +39,12 @@ def analyze_and_print_positions(positions, true_position):
 
     # Calculate statistics
     std_dev = np.std([pos.distance_to(true_position) for pos in positions])
-    distance = mean_position.distance_to(true_position)
-    horizontal_dist, altitude_diff = mean_position.horizontal_and_altitude_distance_to(true_position)
+    distance = true_position.distance_to(mean_position)
+    horizontal_dist, altitude_diff = true_position.horizontal_and_altitude_distance_to(mean_position)
 
     # Convert to LLA for visualization
     computed_position_lla = mean_position.to_lla()
     true_position_lla = true_position.to_lla()
-    computed_positions_lla = [p.to_lla() for p in positions]
 
     # Print results
     print(f"Mean distance: {distance:.3f}m")
@@ -64,17 +63,20 @@ def main():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
 
     # Load data
-    observation = load_cached_rinex(os.path.join(project_root, "tests/data/GEOP057V.25o"))
-    navigation = load_cached_navigation_message(datetime(2025, 2, 26), "WTZR00DEU")
-    navigation = select_constellations(navigation, galileo=True, gps=False)
+    # observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/GEOP057V.25o"))
+    # navigation = load_cached_navigation_message(datetime(2025, 2, 26), "WTZR00DEU")
+
+    # observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/GEOP085R.25o"))
+    # navigation = load_cached_navigation_message(datetime(2025, 3, 26), "WTZR00DEU")
+
+    observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx"))
+    navigation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_MN.rnx"))
+
+    navigation = select_constellations(navigation, galileo=True, gps=False, beidou=False)
 
     # Only use a subset of the data for testing
-    observation = observation.isel(time=np.random.choice(len(observation.time), size=100, replace=False))
-
-    # Load data
-    # observation = load_cached_rinex(os.path.join(project_root, "tests/data/GEOP085R.25o"))
-    # navigation = load_cached_navigation_message(datetime(2025, 3, 26), "WTZR00DEU")
-    # navigation = select_constellations(navigation, galileo=False, gps=True)
+    # observation = observation.isel(time=np.random.choice(len(observation.time), size=500, replace=False))
+    # observation = observation.isel(time=slice(0, 250))
 
     # Compute positions
     position_results = single_point_position(observation, navigation)
@@ -102,6 +104,11 @@ def main():
         true_position.to_lla(),
         [p.to_lla() for p in computed_positions])
     print(f"LLA plot: file://{path2}")
+
+    path3 = plot_altitude_differences(
+        true_position.to_lla(),
+        [p.to_lla() for p in computed_positions])
+    print(f"Altitude plot: file://{path3}")
 
 
 if __name__ == "__main__":

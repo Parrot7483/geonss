@@ -29,17 +29,22 @@ class Constellation(Enum):
     """
     Enum representing GNSS constellations.
     """
-    GPS = "gps"
-    GLONASS = "glonass"
-    GALILEO = "galileo"
     BEIDOU = "beidou"
+    GALILEO = "galileo"
+    GLONASS = "glonass"
+    GPS = "gps"
+    IRNSS = "irnss"
     QZSS = "qzss"
     SBAS = "sbas"
-    IRNSS = "irnss"
     UNKNOWN = "unknown"
 
     def __str__(self):
         return self.value
+
+    def __lt__(self, other):
+        if not isinstance(other, Constellation):
+            return NotImplemented
+        return self.value < other.value
 
 
 def get_common_satellites(dataset_a: xr.Dataset, dataset_b: xr.Dataset) -> list[str]:
@@ -89,10 +94,11 @@ def get_constellation(satellite_id: str) -> Constellation:
 # noinspection SpellCheckingInspection
 def select_constellations(
         df: Union[xr.Dataset, xr.DataArray],
-        galileo: bool = False,
-        gps: bool = False,
         beidou: bool = False,
+        galileo: bool = False,
         glonass: bool = False,
+        gps: bool = False,
+        irnss: bool = False,
         sbas: bool = False,
         underscores: bool = False
 ) -> Union[xr.Dataset, xr.DataArray]:
@@ -112,6 +118,8 @@ def select_constellations(
             If True, keep GLONASS satellites (prefix 'R'), by default False
         sbas : bool, optional
             If True, keep SBAS satellites (prefix 'S'), by default False
+        irnss : bool, optional
+            If True, keep IRNSS satellites (prefix 'I'), by default False
         underscores : bool, optional
             If True, remove entries containing underscores in observable ID, by default False
 
@@ -120,10 +128,11 @@ def select_constellations(
             Filtered data containing only selected constellations
     """
     constellation_filters = {
-        Constellation.GALILEO: galileo,
-        Constellation.GPS: gps,
         Constellation.BEIDOU: beidou,
+        Constellation.GALILEO: galileo,
         Constellation.GLONASS: glonass,
+        Constellation.GPS: gps,
+        Constellation.IRNSS: irnss,
         Constellation.SBAS: sbas
     }
 

@@ -8,9 +8,10 @@ version = "0.1.0"
 description = "GNSS positioning tools"
 requires-python = ">=3.8"
 dependencies = [
-    "georinex==1.16.2",
+    "georinex",
     "matplotlib==3.10.1",
     "numpy==2.2.4",
+    "scipy",
     "paramiko==3.5.1",
     "platformdirs==4.3.6",
     "pytest==8.3.4",
