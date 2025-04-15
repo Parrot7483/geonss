@@ -1,11 +1,12 @@
-hatanka @ git+https://github.com/valgur/hatanaka
-georinex @ git+https://github.com/geospace-code/georinex
-# georinex==1.16.2
+# Switch bag to upstream georinex when PR is merged
+# georinex @ git+https://github.com/geospace-code/georinex@main
+georinex @ git+https://github.com/Parrot7483/georinex@fix-igs-mixed-navigation
+hatanaka @ git+https://github.com/valgur/hatanaka@master
 matplotlib==3.10.1
 numpy==2.2.4
-scipy
 paramiko==3.5.1
 platformdirs==4.3.6
+scipy==1.15.2
 xarray==2025.1.2
 
 # Development

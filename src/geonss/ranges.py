@@ -135,8 +135,8 @@ def apply_ionospheric_correction(
         c5q: np.ndarray,
         s1c: np.ndarray,
         s5q: np.ndarray,
-        f1: np.float64 = np.float64(1575.42),  # L1 carrier frequency in MHz
-        f2: np.float64 = np.float64(1176.45)   # L5 carrier frequency in MHz
+        f1: np.float64 = np.float64(1575.42),  # L1 and E1 carrier frequency in MHz
+        f2: np.float64 = np.float64(1176.45)   # L5 and E5a carrier frequency in MHz
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Apply ionospheric correction using dual-frequency measurements.

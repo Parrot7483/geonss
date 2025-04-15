@@ -54,7 +54,6 @@ def analyze_and_print_positions(positions, true_position):
     print(f"Real: {true_position_lla}; {true_position_lla.google_maps_link()}")
 
 
-
 def main():
     # Set logging detail
     logging.basicConfig(level=logging.INFO)
@@ -64,19 +63,20 @@ def main():
 
     # Load data
     # observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/GEOP057V.25o"))
-    # navigation = load_cached_navigation_message(datetime(2025, 2, 26), "WTZR00DEU")
+    # navigation = load_cached_rinex(os.path.join(project_root, "code/tests/data/BRDC00IGS_R_20250570000_01D_MN.rnx.gz"))
 
     # observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/GEOP085R.25o"))
     # navigation = load_cached_navigation_message(datetime(2025, 3, 26), "WTZR00DEU")
 
     observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx"))
     navigation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_MN.rnx"))
+    # navigation = load_cached_navigation_message(datetime(2025, 4, 9), "WTZR00DEU")
 
     navigation = select_constellations(navigation, galileo=True, gps=False, beidou=False)
 
     # Only use a subset of the data for testing
-    # observation = observation.isel(time=np.random.choice(len(observation.time), size=500, replace=False))
-    # observation = observation.isel(time=slice(0, 250))
+    observation = observation.isel(time=np.random.choice(len(observation.time), size=250, replace=False))
+    # observation = observation.isel(time=slice(0, 50))
 
     # Compute positions
     position_results = single_point_position(observation, navigation)
