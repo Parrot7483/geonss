@@ -29,23 +29,34 @@ class Constellation(Enum):
     """
     Enum representing GNSS constellations.
     """
-    BEIDOU = "beidou"
-    GALILEO = "galileo"
-    GLONASS = "glonass"
-    GPS = "gps"
-    IRNSS = "irnss"
-    QZSS = "qzss"
-    SBAS = "sbas"
-    UNKNOWN = "unknown"
+    GPS = 0
+    GALILEO = 1
+    GLONASS = 2
+    BEIDOU = 3
+    QZSS = 4
+    SBAS = 5
+    IRNSS = 6
+    UNKNOWN = 7
 
     def __str__(self):
-        return self.value
+        # Map enum values to full names
+        names = {
+            0: "GPS",
+            1: "Galileo",
+            2: "GLONASS",
+            3: "BeiDou",
+            4: "QZSS",
+            5: "SBAS",
+            6: "IRNSS",
+            7: "Unknown"
+        }
+        return names[self.value]
 
     def __lt__(self, other):
         if not isinstance(other, Constellation):
             return NotImplemented
-        return self.value < other.value
 
+        return self.value < other.value
 
 def get_common_satellites(dataset_a: xr.Dataset, dataset_b: xr.Dataset) -> list[str]:
     """

@@ -1,5 +1,7 @@
+import os
+from geonss.rinexmanager.util import load_cached_rinex
 from geonss.time import datetime_utc_to_datetime_gps
-from geonss.position import *
+from geonss.coordinates import LLAPosition, ECEFPosition
 from geonss.navigation import satellite_position_velocity_clock_correction
 
 import numpy as np
@@ -9,8 +11,6 @@ def test_solve_satellite_position_1():
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     navigation = load_cached_rinex(base + "/tests/data/WTZR00DEU_20250226_navigation.rnx")
-
-    navigation = select_satellites(navigation, ['G01'])
 
     time = datetime_utc_to_datetime_gps(np.datetime64('2025-02-26T21:42:00'))
 
@@ -24,12 +24,6 @@ def test_solve_satellite_position_1():
     real_position = real_lla.to_ecef()
 
     distance = computed_position.distance_to(real_position)
-
-    # print()
-    # print('G01', time, week, seconds)
-    # print(f"Computed: {computed_position}")
-    # print(f"Expected: {real_position}")
-    # print(f"Distance: {distance}")
 
     assert distance < 3872.0 * 3 # m/s * 3s
 

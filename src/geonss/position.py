@@ -69,14 +69,13 @@ def main():
     # navigation = load_cached_navigation_message(datetime(2025, 3, 26), "WTZR00DEU")
 
     observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx"))
-    navigation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_MN.rnx"))
-    # navigation = load_cached_navigation_message(datetime(2025, 4, 9), "WTZR00DEU")
+    navigation = load_cached_navigation_message(datetime(2025, 4, 7), "BRDC00IGS")
 
-    navigation = select_constellations(navigation, galileo=True, gps=False, beidou=False)
+    navigation = select_constellations(navigation, galileo=True, gps=False)
 
     # Only use a subset of the data for testing
-    observation = observation.isel(time=np.random.choice(len(observation.time), size=250, replace=False))
-    # observation = observation.isel(time=slice(0, 50))
+    # observation = observation.isel(time=np.random.choice(len(observation.time), size=1, replace=False))
+    observation = observation.isel(time=slice(5, 31))
 
     # Compute positions
     position_results = single_point_position(observation, navigation)
@@ -102,12 +101,15 @@ def main():
 
     path2 = plot_positions_in_latlon(
         true_position.to_lla(),
-        [p.to_lla() for p in computed_positions])
+        [p.to_lla() for p in computed_positions],
+        margin=0.00002,
+    )
     print(f"LLA plot: file://{path2}")
 
     path3 = plot_altitude_differences(
         true_position.to_lla(),
-        [p.to_lla() for p in computed_positions])
+        [p.to_lla() for p in computed_positions],
+    )
     print(f"Altitude plot: file://{path3}")
 
 

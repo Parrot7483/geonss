@@ -128,106 +128,127 @@ def tropospheric_delay(time, elevation, height, latitude):
     # Calculate tropospheric delay
     return m_dry * zhd + m_wet * zwd
 
-
-
-def apply_ionospheric_correction(
-        c1c: np.ndarray,
-        c5q: np.ndarray,
-        s1c: np.ndarray,
-        s5q: np.ndarray,
-        f1: np.float64 = np.float64(1575.42),  # L1 and E1 carrier frequency in MHz
-        f2: np.float64 = np.float64(1176.45)   # L5 and E5a carrier frequency in MHz
-) -> Tuple[np.ndarray, np.ndarray]:
+def ionospheric_correction(
+        c1: np.float64 | np.ndarray | xr.DataArray,
+        c5: np.float64 | np.ndarray | xr.DataArray,
+        s1: np.float64 | np.ndarray | xr.DataArray,
+        s5: np.float64 | np.ndarray | xr.DataArray,
+        f1: np.float64 | np.ndarray | xr.DataArray = np.float64(1575.42), # L1 / E1 frequency in MHz
+        f5: np.float64 | np.ndarray | xr.DataArray = np.float64(1176.45), # L5 / E5a frequency in MHz
+) -> (np.float64 | np.ndarray | xr.DataArray, np.float64 | np.ndarray | xr.DataArray):
     """
-    Apply ionospheric correction using dual-frequency measurements.
+    Ionospheric correction using the dual-frequency ionosphere-free combination.
 
-    Uses the ionosphere-free combination to eliminate first-order ionospheric effects
-    and weights the measurements based on SNR.
-
-    This function is fully vectorized for numpy arrays and supports arbitrary frequencies,
-    with defaults set to GPS L1 C/A and L5 frequencies.
+    Calculates the ionosphere-free pseudo-range and determines its weight based
+    on the SNR of the input measurements, assuming variance is inversely
+    proportional to linear SNR. Handles multidimensional NumPy arrays or
+    xarray DataArrays. Preserves coordinates and attributes for xarray inputs.
 
     Args:
-        c1c: Primary frequency code pseudo range(s) in meters
-        c5q: Secondary frequency code pseudo range(s) in meters
-        s1c: Primary frequency signal-to-noise ratio(s) in dB-Hz
-        s5q: Secondary frequency signal-to-noise ratio(s) in dB-Hz
-        f1: Primary carrier frequency in MHz (default: 1575.42 for GPS L1)
-        f2: Secondary carrier frequency in MHz (default: 1176.45 for GPS L5)
+        c1: Primary frequency code pseudo range(s) in meters
+        c5: Secondary frequency code pseudo range(s) in meters
+        s1: Primary frequency signal-to-noise ratio(s) in dB-Hz
+        s5: Secondary frequency signal-to-noise ratio(s) in dB-Hz
+        f1: Primary carrier frequency in MHz (default: 1575.42 for GPS L1).
+            Can be scalar, NumPy array, or xarray DataArray.
+        f5: Secondary carrier frequency in MHz (default: 1176.45 for GPS L5).
+            Can be scalar, NumPy array, or xarray DataArray.
 
     Returns:
         Tuple containing:
-            - ionosphere-corrected pseudo range(s) in meters
-            - signal weight(s) based on combined SNR values
+            - ionosphere-corrected pseudo range(s) (ionosphere-free combination)
+              in meters (same type as input c1).
+            - signal weight(s) reflecting the estimated precision of the
+              corrected range (same type as input c1).
     """
-    # Create a mask for valid measurements
-    valid_mask = ~(np.isnan(c1c) | np.isnan(c5q) | np.isnan(s1c) | np.isnan(s5q))
 
-    # Initialize output arrays with NaN values
-    corrected_range = np.full_like(c1c, np.nan)
-    medium_weight = np.full_like(c1c, np.nan)
+    # calculate ionospheric-free combination parameters
+    f1_sq = f1**2
+    f2_sq = f5**2
+    denominator = f1_sq - f2_sq
 
-    # Calculate ionospheric-free combination parameters
-    alpha = f1**2 / (f1**2 - f2**2)
-    beta = -f2**2 / (f1**2 - f2**2)
+    alpha = f1_sq / denominator
+    beta = -f2_sq / denominator
 
-    # Calculate ionospheric-free combination
-    iono_free = alpha * c1c[valid_mask] + beta * c5q[valid_mask]
+    # Calculate ionosphere-free combination
+    iono_free = alpha * c1 + beta * c5
 
-    # Apply SNR weighting
-    w1 = 10**(s1c[valid_mask] / 10)
-    w2 = 10**(s5q[valid_mask] / 10)
-    weighted_range = (w1 * c1c[valid_mask] + w2 * c5q[valid_mask]) / (w1 + w2)
+    # Calculate linear SNR for weighting
+    w1 = 10**(s1 / 10.0)
+    w2 = 10**(s5 / 10.0)
 
-    # Compute corrected range and weights
-    corrected_range[valid_mask] = (iono_free + weighted_range) / 2
-    medium_weight[valid_mask] = (w1 + w2) / 2
+    # Calculate the variance term for the weight
+    epsilon = 1e-12 # Small value to avoid division by exactly zero SNR
+    variance_term = (alpha**2 / xr.ufuncs.maximum(w1, epsilon)) + \
+                    (beta**2 / xr.ufuncs.maximum(w2, epsilon))
 
-    # Return ionosphere-corrected pseudo range and medium weight
-    return corrected_range, medium_weight
+    # Calculate weight = 1 / variance
+    weight = xr.where(variance_term > 0, 1.0 / variance_term, np.nan)
+
+    # Create a mask for valid inputs (non-NaN in original data)
+    valid_input_mask = ~(xr.ufuncs.isnan(c1) | xr.ufuncs.isnan(c5) |
+                         xr.ufuncs.isnan(s1) | xr.ufuncs.isnan(s5))
+
+    # Create a mask for valid calculated weights (finite and positive)
+    valid_weight_mask = xr.ufuncs.isfinite(weight) & (weight > 0) & xr.ufuncs.isfinite(variance_term) & (variance_term > 0)
+
+    # Also ensure the iono_free calculation itself is finite
+    valid_iono_mask = xr.ufuncs.isfinite(iono_free)
+
+    # Final results are valid only where inputs AND calculations are valid
+    final_valid_mask = valid_input_mask & valid_weight_mask & valid_iono_mask
+
+    # Assign the calculated values to the output arrays only where the final mask is True
+    corrected_range_final = xr.where(final_valid_mask, iono_free, np.nan)
+    combined_weight_final = xr.where(final_valid_mask, weight, np.nan)
+
+    # Add metadata if using xarray
+    if isinstance(c1, xr.DataArray):
+        corrected_range_final = corrected_range_final.rename("iono_free_range")
+        corrected_range_final.attrs['units'] = 'm'
+        corrected_range_final.attrs['long_name'] = 'Ionosphere-free pseudo-range combination'
+        corrected_range_final.attrs['formula'] = '(f1^2*C1 - f5^2*C5) / (f1^2 - f5^2)'
+        corrected_range_final.attrs['input_vars'] = f"c1={c1.name}, c5={c5.name}, s1={s1.name}, s5={s5.name}"
+
+        combined_weight_final = combined_weight_final.rename("iono_free_weight")
+        combined_weight_final.attrs['units'] = 'unitless'
+        combined_weight_final.attrs['long_name'] = 'Weight of ionosphere-free pseudo-range combination'
+        combined_weight_final.attrs['formula'] = '1 / ( (alpha^2/SNR1_lin) + (beta^2/SNR5_lin) )'
+        combined_weight_final.attrs['input_vars'] = f"c1={c1.name}, c5={c5.name}, s1={s1.name}, s5={s5.name}"
+
+    # Return ionosphere-corrected pseudo range and its weight
+    return corrected_range_final, combined_weight_final
 
 
-def calculate_pseudo_ranges(
-        obs_data: xr.Dataset
-) -> xr.Dataset:
+def calculate_pseudo_ranges(obs_data: xr.Dataset) -> xr.Dataset:
     """
-    Calculate pseudo ranges and weights from GNSS observations.
+    Calculate ionosphere-free pseudo ranges and weights for GPS and Galileo.
 
     Args:
-        obs_data: Dataset containing GNSS observations with C1C and C5Q measurements
+        obs_data: Dataset containing GNSS observations with 'sv' coordinate
+                  and relevant RINEX observation code variables.
 
     Returns:
-        Dataset containing pseudo pseudo_ranges and SNR weights for each time and observable
+        Dataset containing iono-free 'pseudo_range' and 'weight',
+        with NaNs for non-G/E/C constellations or where correction failed.
     """
-    ranges = xr.Dataset(
+    c1 = obs_data.C1C
+    s2 = obs_data.S1C
+    c5 = obs_data.C5Q
+    s5 = obs_data.S5Q
+
+    ranges, weights = ionospheric_correction(c1, c5, s2, s5)
+
+    # Create a new dataset to store the results
+    result = xr.Dataset(
+        {
+            'pseudo_range': ranges,
+            'weight': weights
+        },
         coords={
-            'time': obs_data.time,
-            'sv': obs_data.sv
+            'time': ranges.time,
+            'sv': ranges.sv
         }
     )
 
-    ranges['pseudo_range'] = xr.DataArray(
-        dims=['time', 'sv'],
-        coords={'time': obs_data.time, 'sv': obs_data.sv},
-        attrs={'long_name': 'Corrected Pseudo-Range', 'units': 'meter'}
-    )
-
-    ranges['weight'] = xr.DataArray(
-        dims=['time', 'sv'],
-        coords={'time': obs_data.time, 'sv': obs_data.sv},
-        attrs={'long_name': 'Signal Weight', 'units': ''}
-    )
-
-    c1c = obs_data.C1C.values
-    c5q = obs_data.C5Q.values
-    s1c = obs_data.S1C.values
-    s5q = obs_data.S5Q.values
-
-    # Apply ionospheric correction
-    pseudo_range, weight = apply_ionospheric_correction(c1c, c5q, s1c, s5q)
-
-    # Store results in the dataset
-    ranges['pseudo_range'].values = pseudo_range
-    ranges['weight'].values = weight
-
-    return ranges
+    return result

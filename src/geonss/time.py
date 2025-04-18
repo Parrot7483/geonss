@@ -15,39 +15,63 @@ and navigation applications.
 
 import datetime
 import numpy as np
+import functools
 from typing import Union, Tuple
 
 
-def datetime_gps_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime, str]) -> Tuple[np.int32, np.float64]:
+@functools.singledispatch
+def datetime_gps_to_week_and_seconds(dt):
     """
     Extract GPS week and seconds of week from a datetime object that's already in GPS time.
     No UTC to GPS conversion is performed.
 
     Args:
-        dt: Datetime object (Python or numpy) in GPS timescale
+        dt: Datetime object (Python, numpy, or array) in GPS timescale
 
     Returns:
-        Tuple[int, float]: GPS week number and seconds of week
-    """
+        (np.int32, np.float64): GPS week number and seconds of week
 
-    # Convert input to numpy.datetime64 if it's not already
-    if isinstance(dt, str) or isinstance(dt, datetime.datetime):
-        dt = np.datetime64(dt)
+    Raises:
+        TypeError: If input type is not supported
+    """
+    raise TypeError(f"Unsupported input type: {type(dt)}")
+
+
+@datetime_gps_to_week_and_seconds.register(np.ndarray)
+def _(dt: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Handle numpy arrays for vectorized operation"""
+    if not np.issubdtype(dt.dtype, np.datetime64):
+        raise TypeError("Array must contain datetime64 values")
 
     # GPS epoch (January 6, 1980)
     gps_epoch = np.datetime64("1980-01-06T00:00:00")
 
-    # Check if time is before GPS epoch
-    if dt < gps_epoch:
+    # Check if any time is before GPS epoch
+    if np.any(dt < gps_epoch):
         raise ValueError("GPS time cannot be earlier than GPS epoch (January 6, 1980)")
 
-    # Calculate and return the difference in seconds
+    # Calculate the difference in seconds (vectorized)
     total_seconds = (dt - gps_epoch) / np.timedelta64(1, 's')
 
-    # Compute GPS week and time of week using numpy divmod
+    # Compute GPS week and time of week using numpy divmod (vectorized)
     gps_week, seconds_of_week = np.divmod(total_seconds, 7 * 24 * 60 * 60)
 
-    return gps_week, seconds_of_week
+    return gps_week.astype(np.int32), seconds_of_week.astype(np.float64)
+
+
+@datetime_gps_to_week_and_seconds.register(np.datetime64)
+def _(dt: np.datetime64) -> Tuple[np.int32, np.float64]:
+    """Handle numpy datetime64 input by using the ndarray handler"""
+    weeks, seconds = datetime_gps_to_week_and_seconds(np.array([dt]))
+    return np.int32(weeks[0]), np.float64(seconds[0])
+
+
+@datetime_gps_to_week_and_seconds.register(datetime.datetime)
+@datetime_gps_to_week_and_seconds.register(str)
+def _(dt: Union[datetime.datetime, str]) -> Tuple[np.int32, np.float64]:
+    """Handle Python's datetime.datetime or string by converting to numpy.datetime64"""
+    return datetime_gps_to_week_and_seconds(np.datetime64(dt))
+
 
 def datetime_utc_to_datetime_gps(dt: Union[np.datetime64, datetime.datetime, str]) -> np.datetime64:
     """
@@ -112,25 +136,25 @@ def datetime_utc_to_datetime_gps(dt: Union[np.datetime64, datetime.datetime, str
     return gps_time
 
 def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime, str]) -> Tuple[np.int32, np.float64]:
-        """
-        Convert UTC time to GPS week and seconds of week.
+    """
+    Convert UTC time to GPS week and seconds of week.
 
-        GPS time started at 00:00:00 January 6, 1980, UTC with 0 leap seconds.
-        GPS time does not include leap seconds, so the difference between
-        UTC and GPS time increases with each leap second addition.
+    GPS time started at 00:00:00 January 6, 1980, UTC with 0 leap seconds.
+    GPS time does not include leap seconds, so the difference between
+    UTC and GPS time increases with each leap second addition.
 
-        Args:
-            dt: UTC time as a datetime object, numpy datetime64 object,
-                      or as an ISO format string (e.g., "2023-05-24T12:34:56Z")
+    Args:
+        dt: UTC time as a datetime object, numpy datetime64 object,
+                  or as an ISO format string (e.g., "2023-05-24T12:34:56Z")
 
-        Returns:
-            Tuple[np.int32, np.float64]: GPS week number and seconds of week
-        """
-        # First convert UTC to GPS time
-        gps_time = datetime_utc_to_datetime_gps(dt)
+    Returns:
+        Tuple[np.int32, np.float64]: GPS week number and seconds of week
+    """
+    # First convert UTC to GPS time
+    gps_time = datetime_utc_to_datetime_gps(dt)
 
-        # Then extract GPS week and seconds
-        return datetime_gps_to_week_and_seconds(gps_time)
+    # Then extract GPS week and seconds
+    return datetime_gps_to_week_and_seconds(gps_time)
 
 
 # Function that given a np.datetime64 return the day of year

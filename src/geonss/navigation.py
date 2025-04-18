@@ -18,7 +18,7 @@ from typing import Tuple
 import logging
 
 import numpy as np
-from scipy.optimize import newton
+import scipy as sp
 import xarray as xr
 
 from geonss.constants import *
@@ -27,7 +27,7 @@ from geonss.time import datetime_gps_to_week_and_seconds
 logger = logging.getLogger(__name__)
 
 
-def eccentric_anomaly(m, e):
+def eccentric_anomaly(m: np.ndarray | float, e: np.ndarray | float) -> np.ndarray | float:
     """
     Calculate eccentric anomaly using Newton's method for Kepler's equation.
 
@@ -50,7 +50,7 @@ def eccentric_anomaly(m, e):
         """Derivative of Kepler's equation: 1 - e*cos(E)"""
         return 1.0 - ecc * np.cos(e_anom)
 
-    return newton(
+    return sp.optimize.newton(
         kepler_equation,
         x0=m,
         fprime=kepler_equation_prime,
@@ -58,7 +58,6 @@ def eccentric_anomaly(m, e):
         tol=1e-10,
         maxiter=100
     )
-
 
 def satellite_position_velocity_clock_correction(
         ephemeris: xr.Dataset,
@@ -141,7 +140,7 @@ def satellite_position_velocity_clock_correction(
 
     # Apply corrections to obtain the final orbital parameters
     u = phi + delta_u
-    r = a * (1.0 - e * np.cos(e_anom)) + delta_r
+    r = a * (1.0 - e * cos_e) + delta_r
     i = i0 + i_dot * t_k + delta_i
 
     # Positions in orbital plane
@@ -162,10 +161,10 @@ def satellite_position_velocity_clock_correction(
     z = y_prime * sin_i
 
     # Time derivative of the eccentric anomaly
-    e_anom_dot = n / (1.0 - e * np.cos(e_anom))
+    e_anom_dot = n / (1.0 - e * cos_e)
 
     # Time derivative of the argument of latitude
-    phi_dot = np.sqrt(1.0 - np.square(e)) / (1.0 - e * np.cos(e_anom)) * e_anom_dot
+    phi_dot = np.sqrt(1.0 - np.square(e)) / (1.0 - e * cos_e) * e_anom_dot
 
     # Time derivatives of the correction terms
     delta_u_dot = 2.0 * (c_us * cos_2phi - c_uc * sin_2phi) * phi_dot
@@ -173,7 +172,7 @@ def satellite_position_velocity_clock_correction(
 
     # Time derivatives of radius and argument of latitude
     u_dot = phi_dot + delta_u_dot
-    r_dot = a * e * np.sin(e_anom) * e_anom_dot + delta_r_dot
+    r_dot = a * e * sin_e * e_anom_dot + delta_r_dot
 
     # Time derivatives in the orbital plane
     x_prime_dot = r_dot * np.cos(u) - r * np.sin(u) * u_dot
@@ -203,7 +202,7 @@ def satellite_position_velocity_clock_correction(
     _, seconds_of_clock = datetime_gps_to_week_and_seconds(t_oc)
 
     # Relativistic clock correction
-    delta_tr = REL_CONST * np.power(e, sqrt_a) * np.sin(e_anom)
+    delta_tr = REL_CONST * np.power(e, sqrt_a) * sin_e
 
     # Satellite clock correction in meter
     delta_t_oc = gps_seconds - seconds_of_clock
@@ -286,8 +285,9 @@ def calculate_satellite_positions(
 
     for satellite in ranges.sv.values:
         nav_data_sat = nav_data.sel(sv=satellite).dropna(dim='time', how='all')
+        ranges_sv = ranges.sel(sv=satellite).dropna(dim='time', how='all')
 
-        for dt in ranges.time.values:
+        for dt in ranges_sv.time.values:
             ephemeris = nav_data_sat.sel(time=dt, method='nearest')
 
             # Calculate observable position and clock bias at transmission time

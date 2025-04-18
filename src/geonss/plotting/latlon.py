@@ -72,8 +72,8 @@ def save_latlon_plot(fig, filename='gnss_positions.svg'):
 def plot_positions_in_latlon(
         true_position: LLAPosition,
         computed_positions: List[LLAPosition],
+        margin=0.0001,
         filename='lla_positions.svg',
-        margin=0.0001
 ) -> str:
     """
     Plot true and computed positions on a latitude-longitude map and save as SVG.
