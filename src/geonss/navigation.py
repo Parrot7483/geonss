@@ -303,6 +303,6 @@ def calculate_satellite_positions(
             result['vz'].loc[dt, satellite] = vz
             result['clock_bias'].loc[dt, satellite] = clock_bias
 
-        logger.info(f"Finished computing positions for observable {satellite}")
+        logger.info(f"Finished computing positions for {satellite}")
 
     return result
