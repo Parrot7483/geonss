@@ -20,11 +20,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1740367490,
-        "narHash": "sha256-WGaHVAjcrv+Cun7zPlI41SerRtfknGQap281+AakSAw=",
+        "lastModified": 1744932701,
+        "narHash": "sha256-fusHbZCyv126cyArUwwKrLdCkgVAIaa/fQJYFlCEqiU=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "0196c0175e9191c474c26ab5548db27ef5d34b05",
+        "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
         "type": "github"
       },
       "original": {
@@ -37,14 +37,15 @@
     "requirements": {
       "flake": false,
       "locked": {
-        "path": "requirements.txt",
+        "lastModified": 1,
+        "narHash": "sha256-oa9wVgzYHJe6VLhja0Ls0Cj3brF64//w1fbwDl8J868=",
+        "path": "./requirements.txt",
         "type": "path"
       },
       "original": {
-        "path": "requirements.txt",
+        "path": "./requirements.txt",
         "type": "path"
-      },
-      "parent": []
+      }
     },
     "root": {
       "inputs": {

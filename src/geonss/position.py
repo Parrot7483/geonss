@@ -69,7 +69,7 @@ def main():
     # navigation = load_cached_navigation_message(datetime(2025, 3, 26), "WTZR00DEU")
 
     observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx"))
-    navigation = load_cached_navigation_message(datetime(2025, 4, 7), "BRDC00IGS")
+    navigation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_MN.rnx"))
 
     navigation = select_constellations(navigation, galileo=True, gps=False)
 

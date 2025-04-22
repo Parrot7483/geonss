@@ -233,11 +233,11 @@ def calculate_pseudo_ranges(obs_data: xr.Dataset) -> xr.Dataset:
         with NaNs for non-G/E/C constellations or where correction failed.
     """
     c1 = obs_data.C1C
-    s2 = obs_data.S1C
+    s1 = obs_data.S1C
     c5 = obs_data.C5Q
     s5 = obs_data.S5Q
 
-    ranges, weights = ionospheric_correction(c1, c5, s2, s5)
+    ranges, weights = ionospheric_correction(c1, c5, s1, s5)
 
     # Create a new dataset to store the results
     result = xr.Dataset(

@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     requirements = {
-      url = "path:requirements.txt";  # Track requirements.txt as an input
+      url = "path:./requirements.txt"; # Track requirements.txt as an input
       flake = false;
     };
   };

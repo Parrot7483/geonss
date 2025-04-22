@@ -34,6 +34,8 @@ def build_gnss_model(
         enable_earth_rotation_correction: bool = True,
         enable_tropospheric_correction: bool = True,
         enable_iter_system_bias_correction: bool = True,
+        enable_elevation_weighting: bool = True,
+        enable_snr_weighting: bool = True,
 ) -> (np.ndarray, np.ndarray, np.ndarray):
     """
     Build geometry matrix, residuals vector and weights for GNSS positioning.
@@ -46,6 +48,8 @@ def build_gnss_model(
         enable_earth_rotation_correction: Whether to apply Earth rotation correction
         enable_tropospheric_correction: Whether to apply tropospheric correction
         enable_iter_system_bias_correction: Whether to apply inter-system bias correction
+        enable_elevation_weighting: Whether to apply elevation-based weighting
+        enable_snr_weighting: Whether to apply SNR-based weighting
     Returns:
         Tuple containing geometry matrix, residuals vector, weights vector
     """
@@ -112,6 +116,9 @@ def build_gnss_model(
         satellites[["x", "y", "z"]].to_array(dim="coord").transpose("sv", "coord").values
     )
 
+    assert 0 <= elevation_angles <= np.pi / 2, \
+        f"Elevation angles out of range. Expected [0, pi/2], got {elevation_angles}"
+
     # Apply signal travel time correction if enabled
     if enable_signal_travel_time_correction:
         signal_travel_times = satellite_ranges / SPEED_OF_LIGHT
@@ -169,11 +176,23 @@ def build_gnss_model(
         - isb_corrections
     )
 
-    # Calculate Weights
-    weights = np.ones(num_sats, dtype=np.float64)
+    # Initialize Weights
+    weights = np.ones(num_sats)
 
-    sin_elevation = np.sin(elevation_angles)
-    weights *= np.maximum(sin_elevation ** 2, 1e-3)
+    if enable_elevation_weighting:
+        # Calculate elevation-based weight
+        sin_elevation_sq = np.sin(elevation_angles) ** 2
+
+        weights *= sin_elevation_sq
+
+    if enable_snr_weighting:
+        # Get linear SNR values from the input dataset
+        snr_linear = ranges.weight.values
+
+        # Add a small floor to SNR to prevent zero weights if SNR is ever zero/negative
+        snr_linear_safe = np.maximum(snr_linear, 1e-6)
+
+        weights *= snr_linear_safe
 
     # Final Assertions
     if enable_iter_system_bias_correction:
