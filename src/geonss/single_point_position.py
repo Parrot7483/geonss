@@ -1,3 +1,4 @@
+import numpy as np
 import xarray
 
 from geonss.constellation import get_constellation
@@ -33,7 +34,6 @@ def build_gnss_model(
         enable_signal_travel_time_correction: bool = True,
         enable_earth_rotation_correction: bool = True,
         enable_tropospheric_correction: bool = True,
-        enable_iter_system_bias_correction: bool = True,
         enable_elevation_weighting: bool = True,
         enable_snr_weighting: bool = True,
 ) -> (np.ndarray, np.ndarray, np.ndarray):
@@ -47,7 +47,6 @@ def build_gnss_model(
         enable_signal_travel_time_correction: Whether to apply signal travel time correction
         enable_earth_rotation_correction: Whether to apply Earth rotation correction
         enable_tropospheric_correction: Whether to apply tropospheric correction
-        enable_iter_system_bias_correction: Whether to apply inter-system bias correction
         enable_elevation_weighting: Whether to apply elevation-based weighting
         enable_snr_weighting: Whether to apply SNR-based weighting
     Returns:
@@ -78,46 +77,6 @@ def build_gnss_model(
     num_unique_constellations = len(unique_constellations)
 
     num_sats = len(ranges.sv)
-    isb_corrections = np.zeros(num_sats) # Initialize ISB corrections with zeros
-    isb_geometry = np.empty((num_sats, 0)) # Initialize as empty
-
-    if enable_iter_system_bias_correction:
-        assert len(parameters) == 4 + num_unique_constellations - 1, \
-            f"Invalid parameter vector length. Expected {num_unique_constellations + 3} (3 pos + 1 clock + {num_unique_constellations - 1} ISBs), got {len(parameters)}"
-    else:
-        assert len(parameters) == 4, \
-            f"Invalid parameter vector length. Expected 4 parameters (pos + clock) when ISB disabled, got {len(parameters)}"
-
-    if enable_iter_system_bias_correction and num_unique_constellations > 1:
-        non_ref_constellations = unique_constellations[1:]
-        num_isb_params = len(non_ref_constellations)
-
-        # Map non-reference constellations to their parameter index (starting from 4)
-        isb_param_indices = {const: i + 4 for i, const in enumerate(non_ref_constellations)}
-        # Map non-reference constellations to their column index in the ISB part of the geometry matrix
-        isb_col_indices = {const: i for i, const in enumerate(non_ref_constellations)}
-
-        # Calculate ISB correction values for residuals
-        for const in non_ref_constellations:
-            mask = (sv_constellations == const)
-            isb_value = parameters[isb_param_indices[const]]
-            isb_corrections[mask] = isb_value # ISB is subtracted from residual later
-
-        # Build the ISB part of the geometry matrix
-        isb_geometry = np.zeros((num_sats, num_isb_params))
-        for const in non_ref_constellations:
-            mask = (sv_constellations == const)
-            col_idx = isb_col_indices[const]
-            isb_geometry[mask, col_idx] = 1.0 # Coefficient for ISB parameter is 1
-
-    # Calculate elevation angles (needed for troposphere and weighting)
-    # Use initial satellite positions before time-of-flight corrections for elevation
-    elevation_angles = receiver_pos.elevation_angle(
-        satellites[["x", "y", "z"]].to_array(dim="coord").transpose("sv", "coord").values
-    )
-
-    assert 0 <= elevation_angles <= np.pi / 2, \
-        f"Elevation angles out of range. Expected [0, pi/2], got {elevation_angles}"
 
     # Apply signal travel time correction if enabled
     if enable_signal_travel_time_correction:
@@ -139,11 +98,14 @@ def build_gnss_model(
         rotated_y = -sin_thetas * satellite_positions[:, 0] + cos_thetas * satellite_positions[:, 1]
         satellite_positions = np.column_stack([rotated_x, rotated_y, satellite_positions[:, 2]])
 
+    # Calculate elevation angles (needed for troposphere and weighting)
+    elevation_angles = receiver_pos.elevation_angle(satellite_positions)
+
     # Apply tropospheric correction if enabled (applied to pseudo-range measurement)
     tropospheric_corrections = np.zeros(num_sats)
     if enable_tropospheric_correction:
         tropospheric_corrections = tropospheric_delay(
-            time, # Assuming time is compatible or single value
+            time,
             elevation_angles,
             receiver_pos_lla.altitude,
             receiver_pos_lla.latitude
@@ -156,13 +118,10 @@ def build_gnss_model(
 
     # Build Geometry Matrix
     # Base part: partial derivatives w.r.t. x, y, z, clock_bias
-    base_geometry_matrix = np.column_stack([
+    geometry_matrix = np.column_stack([
         -unit_vectors,                 # d(range)/dx, d(range)/dy, d(range)/dz
         np.ones(num_sats)              # d(range)/d(clock_bias)
     ])
-
-    # Combine base geometry with ISB geometry (if enabled)
-    geometry_matrix = np.hstack((base_geometry_matrix, isb_geometry))
 
     # Calculate Residuals
     # Residual = Observed Pseudo Range - Modeled Pseudo Range
@@ -173,7 +132,6 @@ def build_gnss_model(
         - clock_bias
         + satellite_clock_biases
         - tropospheric_corrections
-        - isb_corrections
     )
 
     # Initialize Weights
@@ -194,13 +152,8 @@ def build_gnss_model(
 
         weights *= snr_linear_safe
 
-    # Final Assertions
-    if enable_iter_system_bias_correction:
-        assert geometry_matrix.shape[1] == 3 + len(unique_constellations), \
-            f"Geometry matrix columns mismatch. Expected {3 + len(unique_constellations)}, got {geometry_matrix.shape[1]}"
-    else:
-        assert geometry_matrix.shape[1] == 4, \
-            f"Geometry matrix columns mismatch. Expected 4, got {geometry_matrix.shape[1]}"
+    assert geometry_matrix.shape[1] == 4, \
+        f"Geometry matrix columns mismatch. Expected 4, got {geometry_matrix.shape[1]}"
     assert geometry_matrix.shape[0] == num_sats, \
         f"Geometry matrix rows mismatch. Expected {num_sats}, got {geometry_matrix.shape[0]}"
     assert len(residuals) == num_sats, \
@@ -274,49 +227,27 @@ def single_point_position(
     positions = []
 
     for t in observation.time.values:
-        try:
-            # Select data for this time step
-            ranges_t = ranges.sel(time=t)
-            sat_pos_t = sat_pos.sel(time=t)
+        # Select data for this time step
+        ranges_t = ranges.sel(time=t)
+        sat_pos_t = sat_pos.sel(time=t)
 
-            # Find approximate position using Iterative Least Squares (ILS) without corrections
-            intermediate_state = iterative_least_squares(
-                initial_state=initial_state,
-                model_fn=build_gnss_model,
-                iterations=5,
-                ranges=ranges_t,
-                satellites=sat_pos_t,
-                enable_tropospheric_correction = False,
-                enable_iter_system_bias_correction = False,
-            )
+        # Solve solution with Iterative Reweighted Least Squares (IRLS)
+        final_state = iterative_reweighted_least_squares(
+            initial_state=initial_state,
+            model_fn=build_gnss_model,
+            loss_fn=huber_weight,
+            convergence_fn=check_gnss_convergence,
+            max_iterations=5,
+            ranges=ranges_t,
+            satellites=sat_pos_t,
+        )
 
-            # Add a zero to intermedia state for inter system bias
-            intermediate_state = np.append(intermediate_state, 0)
+        # Convert final parameter_vector back to expected return format
+        position = ECEFPosition.from_array(final_state[:3])
+        clock_bias = np.float64(final_state[3])
 
-            huber_weight_fn = huber_weight
-            huber_weight_fn = partial(huber_weight, k=0.7)
-
-            # Refine solution with Iterative Reweighted Least Squares (IRLS)
-            final_state = iterative_reweighted_least_squares(
-                initial_state=intermediate_state,
-                model_fn=build_gnss_model,
-                loss_fn=huber_weight_fn,
-                convergence_fn=check_gnss_convergence,
-                damping_factor=np.float64(0.01),
-                max_iterations=5,
-                ranges=ranges_t,
-                satellites=sat_pos_t,
-            )
-
-            # Convert final parameter_vector back to expected return format
-            position = ECEFPosition.from_array(final_state[:3])
-            clock_bias = np.float64(final_state[3])
-
-            positions.append((t, position, clock_bias))
-            logger.debug(f"Successfully computed position for time {t}")
-
-        except Exception as e:
-            logger.warning(f"Error computing position at {t}: {e}")
+        positions.append((t, position, clock_bias))
+        logger.debug(f"Successfully computed position for time {t}")
 
     logger.info(
         f"Successfully computed "

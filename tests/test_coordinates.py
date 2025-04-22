@@ -1,6 +1,5 @@
 import pytest
 import numpy as np
-import pymap3d as pm
 
 from geonss.coordinates import ECEFPosition, LLAPosition
 
@@ -95,6 +94,7 @@ RECEIVER_SATELLITE_ELEVATION_AZIMUTH_RANGE = [
     (-4483772.15,+2694122.11,-3638211.06,-4553987.18,+2736311.56,-3695568.70,+90.000000,+270.000000,+100000.00),
     (-4483772.15,+2694122.11,-3638211.06,-22037530.81,+13241484.41,-17977621.96,+90.000000,+270.000000,+25000000.00),
 ]
+
 @pytest.mark.parametrize("rx,ry,rz,sx,sy,sz,el_deg,az_deg,distance", RECEIVER_SATELLITE_ELEVATION_AZIMUTH_RANGE)
 def test_elevation(rx, ry, rz, sx, sy, sz, el_deg, az_deg, distance):
     """
@@ -111,3 +111,36 @@ def test_elevation(rx, ry, rz, sx, sy, sz, el_deg, az_deg, distance):
 
     # Assert that calculated elevation matches expected value
     assert diff < np.float64(1e-5), f"Elevation angle mismatch: {calculated_elevation} != {el_deg}"
+
+def test_elevation_with_ndarray():
+    """
+    Test batch elevation angle calculation using predefined test vectors with ndarray input.
+    """
+    # Group test data by receiver position
+    receiver_positions = {}
+    for rx, ry, rz, sx, sy, sz, el_deg, az_deg, distance in RECEIVER_SATELLITE_ELEVATION_AZIMUTH_RANGE:
+        receiver_key = (rx, ry, rz)
+        if receiver_key not in receiver_positions:
+            receiver_positions[receiver_key] = []
+        receiver_positions[receiver_key].append((sx, sy, sz, el_deg))
+
+    # Test each receiver position with multiple satellites
+    for (rx, ry, rz), satellites in receiver_positions.items():
+        # Create receiver position
+        receiver_ecef = ECEFPosition(rx, ry, rz)
+
+        # Create satellite positions as ndarray
+        satellite_positions = np.array([sat[:3] for sat in satellites])
+        expected_elevations = np.array([sat[3] for sat in satellites])
+
+        # Calculate all elevation angles at once
+        calculated_elevations = np.degrees(receiver_ecef.elevation_angle(satellite_positions))
+
+        # Assert all elevation angles match expected values
+        np.testing.assert_allclose(
+            calculated_elevations,
+            expected_elevations,
+            rtol=1e-5,
+            atol=1e-5,
+            err_msg="Batch elevation angle calculation failed"
+        )

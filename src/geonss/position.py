@@ -71,7 +71,7 @@ def main():
     observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx"))
     navigation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_MN.rnx"))
 
-    navigation = select_constellations(navigation, galileo=True, gps=False)
+    navigation = select_constellations(navigation, galileo=True)
 
     # Only use a subset of the data for testing
     # observation = observation.isel(time=np.random.choice(len(observation.time), size=1, replace=False))

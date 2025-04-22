@@ -205,25 +205,28 @@ class ECEFPosition:
         # Handle both single ECEFPosition and numpy array of coordinates
         if isinstance(observable, ECEFPosition):
             vector_ecef = observable.array - self.array
-            vector_ecef = vector_ecef.reshape(1, 3)
+            vector_enu = rotation @ vector_ecef
+
+            # Calculate horizontal distance
+            horizontal_distance = np.sqrt(vector_enu[0]**2 + vector_enu[1]**2)
+
+            # Calculate elevation angle
+            elevation = np.arctan2(vector_enu[2], horizontal_distance)
+            return np.float64(elevation)
         else:
-            # Assume observable is a numpy array of shape (n, 3)
-            vector_ecef = observable - self.array.reshape(1, 3)
+            # For numpy array of shape (n, 3)
+            vectors_ecef = observable - self.array
 
-        # Apply rotation to each vector
-        vector_enu = rotation @ vector_ecef.T  # shape becomes (3, n)
+            # Apply rotation to each vector (more efficiently)
+            vectors_enu = np.dot(vectors_ecef, rotation.T)  # shape (n, 3)
 
-        # Calculate horizontal distance for each vector
-        horizontal_distance = np.sqrt(vector_enu[0]**2 + vector_enu[1]**2)
+            # Calculate horizontal distance for each vector
+            horizontal_distances = np.sqrt(vectors_enu[:, 0]**2 + vectors_enu[:, 1]**2)
 
-        # Calculate elevation angles
-        elevations = np.arctan2(vector_enu[2], horizontal_distance)
+            # Calculate elevation angles
+            elevations = np.arctan2(vectors_enu[:, 2], horizontal_distances)
 
-        # If input was a single position, return a scalar
-        if isinstance(observable, ECEFPosition) or observable.shape[0] == 1:
-            return np.float64(elevations[0])
-
-        return elevations
+            return elevations
 
     def rotate_z(self, angle: float) -> 'ECEFPosition':
         """
