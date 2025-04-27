@@ -154,7 +154,6 @@ def iterative_reweighted_least_squares(
     state = initial_state.astype(np.float64, copy=True)
     previous_residuals: Optional[np.ndarray] = None
     previous_apriori_weights: Optional[np.ndarray] = None
-    final_weights: Optional[np.ndarray] = None
     converged = False
 
     for iteration in range(max_iterations):
@@ -197,8 +196,6 @@ def iterative_reweighted_least_squares(
                 # 'weights' already holds current_apriori_weights
         else:
             logger.debug("First iteration, using only a priori weights.")
-
-        final_weights = weights # Store weights used in this WLS step
 
         # 3. Solve Weighted Least Squares for the state *update*
         try:

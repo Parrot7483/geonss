@@ -27,7 +27,7 @@ def check_gnss_convergence(
     return np.linalg.norm(parameter_vector_update[:3]) < 0.01
 
 
-def build_gnss_model(
+def build_positioning_model(
         parameters: np.ndarray,
         ranges: xr.Dataset,
         satellites: xr.Dataset,
@@ -64,17 +64,11 @@ def build_gnss_model(
 
     # Extract data for valid satellites
     satellite_ranges = ranges.pseudo_range.values
-    sv_ids = ranges.sv.values
 
     # Get satellite positions, velocities, and clock biases
-    satellite_velocities = satellites[["vx", "vy", "vz"]].to_array(dim="coord").transpose("sv", "coord").values
-    satellite_positions = satellites[["x", "y", "z"]].to_array(dim="coord").transpose("sv", "coord").values
-    satellite_clock_biases = satellites.clock_bias.values
-
-    # Inter-System Bias (ISB) Setup (if enabled)
-    sv_constellations = np.array([get_constellation(sv) for sv in sv_ids])
-    unique_constellations = np.unique(sv_constellations)
-    num_unique_constellations = len(unique_constellations)
+    satellite_velocities = satellites['velocity'].values
+    satellite_positions = satellites['position'].values
+    satellite_clock_biases = satellites['clock'].values
 
     num_sats = len(ranges.sv)
 
@@ -234,7 +228,7 @@ def single_point_position(
         # Solve solution with Iterative Reweighted Least Squares (IRLS)
         final_state = iterative_reweighted_least_squares(
             initial_state=initial_state,
-            model_fn=build_gnss_model,
+            model_fn=build_positioning_model,
             loss_fn=huber_weight,
             convergence_fn=check_gnss_convergence,
             max_iterations=5,

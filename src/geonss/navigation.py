@@ -211,81 +211,68 @@ def satellite_position_velocity_clock_correction(
 
     return x, y, z, vx, vy, vz, delta_t_sv_m
 
-
 def calculate_satellite_positions(
         nav_data: xr.Dataset,
         ranges: xr.Dataset
 ) -> xr.Dataset:
     """
-    Calculate observable positions and clock biases for each observation.
+    Calculate observable positions, velocities, and clock biases for each observation.
 
-    This function determines observable positions at signal reception time.
+    This function determines observable positions, velocities, and clock states
+    at signal reception time based on navigation messages and pseudo-ranges.
 
     Args:
-        nav_data: Navigation messages dataset containing ephemeris data
-        ranges: Dataset with pseudo ranges and time/observable coordinates
+        nav_data: Navigation messages dataset containing ephemeris data.
+                  Expected to have 'time' and 'sv' coordinates.
+        ranges: Dataset with pseudo ranges and 'time'/'sv' coordinates.
 
     Returns:
-        Dataset containing observable positions (x, y, z) coordinates and
-        clock bias for each time and observable
+        Dataset containing observable positions (x, y, z), velocities (vx, vy, vz),
+        and clock bias ('clock') for each time and observable ('sv').
+        Includes ECEF coordinate for position and velocity.
     """
     logger.info(
-        f"Starting to compute {len(ranges.sv.values)} observable positions for {len(ranges.time.values)} time steps")
+        f"Starting to compute observable states for {len(ranges.sv.values)} observables "
+        f"across {len(ranges.time.values)} time steps."
+    )
 
-    # Initialize result dataset with time and sv coordinates from pseudo ranges
+    # Define ECEF coordinates
+    ecef_coords = ['x', 'y', 'z']
+
+    # Initialize result dataset with coordinates from ranges and the new ECEF coordinate
     result = xr.Dataset(
         coords={
             'time': ranges.time,
-            'sv': ranges.sv
+            'sv': ranges.sv,
+            'ECEF': ecef_coords,
         }
     )
 
-    # Initialize data variables
-    result['x'] = xr.DataArray(
-        dims=['time', 'sv'],
-        coords={'time': ranges.time, 'sv': ranges.sv},
-        attrs={'long_name': 'X Position', 'units': 'meter'}
+    # Initialize data variables according to the target format
+    result['position'] = xr.DataArray(
+        np.nan,  # Initialize with NaNs
+        dims=['time', 'sv', 'ECEF'],
+        coords={'time': ranges.time, 'sv': ranges.sv, 'ECEF': ecef_coords},
+        attrs={'long_name': 'Satellite Position ECEF', 'units': 'meter'}
     )
 
-    result['y'] = xr.DataArray(
-        dims=['time', 'sv'],
-        coords={'time': ranges.time, 'sv': ranges.sv},
-        attrs={'long_name': 'Y Position', 'units': 'meter'}
+    result['velocity'] = xr.DataArray(
+        np.nan,  # Initialize with NaNs
+        dims=['time', 'sv', 'ECEF'],
+        coords={'time': ranges.time, 'sv': ranges.sv, 'ECEF': ecef_coords},
+        attrs={'long_name': 'Satellite Velocity ECEF', 'units': 'meter / second'}
     )
 
-    result['z'] = xr.DataArray(
+    result['clock'] = xr.DataArray(
+        np.nan,  # Initialize with NaNs
         dims=['time', 'sv'],
         coords={'time': ranges.time, 'sv': ranges.sv},
-        attrs={'long_name': 'Z Position', 'units': 'meter'}
-    )
-
-    result['vx'] = xr.DataArray(
-        dims=['time', 'sv'],
-        coords={'time': ranges.time, 'sv': ranges.sv},
-        attrs={'long_name': 'X Velocity', 'units': 'meter / second'}
-    )
-
-    result['vy'] = xr.DataArray(
-        dims=['time', 'sv'],
-        coords={'time': ranges.time, 'sv': ranges.sv},
-        attrs={'long_name': 'Y Velocity', 'units': 'meter / second'}
-    )
-
-    result['vz'] = xr.DataArray(
-        dims=['time', 'sv'],
-        coords={'time': ranges.time, 'sv': ranges.sv},
-        attrs={'long_name': 'Z Velocity', 'units': 'meter / second'}
-    )
-
-    result['clock_bias'] = xr.DataArray(
-        dims=['time', 'sv'],
-        coords={'time': ranges.time, 'sv': ranges.sv},
-        attrs={'long_name': 'Clock Bias', 'units': 'second'}
+        attrs={'long_name': 'Satellite Clock Bias', 'units': 'second'}
     )
 
     for satellite in ranges.sv.values:
         nav_data_sat = nav_data.sel(sv=satellite).dropna(dim='time', how='all')
-        ranges_sv = ranges.sel(sv=satellite).dropna(dim='time', how='all')
+        ranges_sv = ranges.sel(sv=satellite)
 
         for dt in ranges_sv.time.values:
             ephemeris = nav_data_sat.sel(time=dt, method='nearest')
@@ -294,14 +281,16 @@ def calculate_satellite_positions(
             x, y, z, vx, vy, vz, clock_bias = satellite_position_velocity_clock_correction(
                 ephemeris, dt)
 
-            # Store results in dataset
-            result['x'].loc[dt, satellite] = x
-            result['y'].loc[dt, satellite] = y
-            result['z'].loc[dt, satellite] = z
-            result['vx'].loc[dt, satellite] = vx
-            result['vy'].loc[dt, satellite] = vy
-            result['vz'].loc[dt, satellite] = vz
-            result['clock_bias'].loc[dt, satellite] = clock_bias
+            # Store results in the structured dataset
+            result['position'].loc[dt, satellite, 'x'] = x
+            result['position'].loc[dt, satellite, 'y'] = y
+            result['position'].loc[dt, satellite, 'z'] = z
+
+            result['velocity'].loc[dt, satellite, 'x'] = vx
+            result['velocity'].loc[dt, satellite, 'y'] = vy
+            result['velocity'].loc[dt, satellite, 'z'] = vz
+
+            result['clock'].loc[dt, satellite] = clock_bias
 
         logger.info(f"Finished computing positions for {satellite}")
 
