@@ -89,8 +89,8 @@ def get_constellation(satellite_id: str) -> Constellation:
 
     constellation_map = {
         'G': Constellation.GPS,
-        'R': Constellation.GLONASS,
         'E': Constellation.GALILEO,
+        'R': Constellation.GLONASS,
         'C': Constellation.BEIDOU,
         'B': Constellation.BEIDOU,
         'J': Constellation.QZSS,
@@ -105,10 +105,11 @@ def get_constellation(satellite_id: str) -> Constellation:
 # noinspection SpellCheckingInspection
 def select_constellations(
         df: Union[xr.Dataset, xr.DataArray],
-        beidou: bool = False,
+        gps: bool = False,
         galileo: bool = False,
         glonass: bool = False,
-        gps: bool = False,
+        beidou: bool = False,
+        qzss: bool = False,
         irnss: bool = False,
         sbas: bool = False,
         underscores: bool = False
@@ -119,36 +120,39 @@ def select_constellations(
     Args:
         df : xarray.Dataset or xarray.DataArray
             Input data containing observable identifiers in a 'sv' coordinate/variable
-        galileo : bool, optional
-            If True, keep Galileo satellites (prefix 'E'), by default False
         gps : bool, optional
             If True, keep GPS satellites (prefix 'G'), by default False
-        beidou : bool, optional
-            If True, keep BeiDou satellites (prefixes 'C' and 'B'), by default False
+        galileo : bool, optional
+            If True, keep Galileo satellites (prefix 'E'), by default False
         glonass : bool, optional
             If True, keep GLONASS satellites (prefix 'R'), by default False
+        beidou : bool, optional
+            If True, keep BeiDou satellites (prefixes 'C' and 'B'), by default False
+        qzss : bool, optional
+            If True, keep QZSS satellites (prefix 'J'), by default False
         sbas : bool, optional
             If True, keep SBAS satellites (prefix 'S'), by default False
         irnss : bool, optional
             If True, keep IRNSS satellites (prefix 'I'), by default False
         underscores : bool, optional
-            If True, remove entries containing underscores in observable ID, by default False
+            If True, keep entries containing underscores in observable ID, by default False
 
     Returns:
         xarray.Dataset or xarray.DataArray
             Filtered data containing only selected constellations
     """
     constellation_filters = {
-        Constellation.BEIDOU: beidou,
+        Constellation.GPS: gps,
         Constellation.GALILEO: galileo,
         Constellation.GLONASS: glonass,
-        Constellation.GPS: gps,
+        Constellation.BEIDOU: beidou,
+        Constellation.QZSS: qzss,
+        Constellation.SBAS: sbas,
         Constellation.IRNSS: irnss,
-        Constellation.SBAS: sbas
     }
 
     def keep_sv(sv_id: str) -> bool:
-        if '_' in sv_id and underscores:
+        if '_' in sv_id and not underscores:
             return False
         constellation = get_constellation(sv_id)
         return constellation_filters.get(constellation, True)
