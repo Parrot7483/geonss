@@ -1,3 +1,4 @@
+import os
 import xarray as xr
 import pandas as pd
 import numpy as np
@@ -8,120 +9,166 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def parse_antex_to_pco_xarray(path):
-    """Convert ANTEX data to an xarray Dataset containing Satellite Phase Center Offset (PCO) and
-    Phase
+def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
+    """Convert ANTEX data to an xarray Dataset containing Satellite Phase Center Offset (PCO).
+
+    The dataset structure includes NEU offsets and associated metadata indexed by
+    a multi-index of (time, sv, frequency).
 
     Args:
-        path: Path to the ANTEX file
+        path: Path to the ANTEX file.
 
     Returns:
-        xr.Dataset: Dataset containing PCO values for each satellite and frequency
+        xr.Dataset: Dataset containing PCO values.
+                    Dimensions: (indexed by time, sv, frequency; NEU dimension for offset)
+                    Coordinates: time, sv, frequency, NEU, valid_until, cospar_id, sat_code, sat_type
+                    Data variables: offset
     """
-    # Parse the ANTEX file
-    parser = parsers.parse_file(parser_name="antex", file_path=path)
-    data = parser.as_dict()
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"ANTEX file not found: {path}")
 
-    # Filter for satellite antennas only (3-char keys like 'E01')
-    satellites = {key: data[key] for key in data if isinstance(key, str) and len(key) == 3}
+    # --- 1. Parse ANTEX ---
+    try:
+        # Use the actual midgard parser
+        parser = parsers.parse_file(parser_name="antex", file_path=path)
+        data = parser.as_dict()
+        meta = parser.meta
+    except Exception as e:
+        logger.error(f"Failed to parse ANTEX file '{path}' using midgard: {e}")
+        raise RuntimeError(f"Midgard parser failed for ANTEX file: {path}") from e
 
-    # Create lists to store satellite metadata and frequency-specific data
-    satellite_data = []
-    frequency_data = []
+    # --- 2. Flatten Data ---
+    records = []
+    offsets = []
+    # Filter for satellite antennas only (Standard 3-char GNSS identifiers)
+    satellite_keys = {key for key in data if isinstance(key, str) and len(key) == 3 and key[0] in 'GREJCISM'}
 
-    # Process all satellites
-    for sat, valid_periods in satellites.items():
-        # Process each valid time period
-        for valid_from, values in valid_periods.items():
-            valid_from_ts = pd.Timestamp(valid_from)
-            valid_until_ts = pd.Timestamp(values["valid_until"])
+    for sat in satellite_keys:
+        valid_periods = data.get(sat, {}) # Use .get for safety
+        if not isinstance(valid_periods, dict):
+            logger.warning(f"Unexpected data structure for satellite {sat} in parsed data. Skipping.")
+            continue
 
-            # Get satellite metadata for this period
+        for valid_from_str, values in valid_periods.items():
+            # Check if 'values' is a dictionary before proceeding
+            if not isinstance(values, dict):
+                logger.warning(f"Skipping invalid period data for {sat} at {valid_from_str}. Expected dict, got {type(values)}.")
+                continue
+
+            try:
+                # Use pd.to_datetime for more robust parsing
+                valid_from_ts = pd.to_datetime(valid_from_str)
+                valid_until_ts = pd.to_datetime(values["valid_until"])
+            except (ValueError, TypeError, KeyError) as e:
+                logger.warning(f"Skipping period for {sat} due to invalid/missing date format: {valid_from_str} or 'valid_until'. Error: {e}")
+                continue
+
             cospar_id = values.get("cospar_id", "")
             sat_code = values.get("sat_code", "")
             sat_type = values.get("sat_type", "")
 
-            # Add satellite metadata entry
-            satellite_data.append({
+            records.append({
                 "sv": sat,
-                "valid_from": valid_from_ts,
+                "time": valid_from_ts,
                 "valid_until": valid_until_ts,
                 "cospar_id": cospar_id,
                 "sat_code": sat_code,
                 "sat_type": sat_type
             })
 
-            # Process all available frequencies for this satellite in this period
             for freq_id, freq_data in values.items():
                 # Skip non-frequency entries (metadata fields)
+                # Check if freq_data is a dict and has the 'neu' key
                 if not isinstance(freq_data, dict) or "neu" not in freq_data:
                     continue
 
-                # Add frequency data point
-                frequency_data.append({
+                neu_offset = freq_data["neu"]
+                # Ensure NEU data is a list/tuple/array of 3 numbers
+                if not isinstance(neu_offset, (list, tuple, np.ndarray)) or len(neu_offset) != 3:
+                    logger.warning(f"Skipping invalid NEU offset format/length for {sat}, {freq_id} at {valid_from_ts}: {neu_offset}")
+                    continue
+                try:
+                    # Convert to float, handle potential Nones or non-numeric values
+                    offset_n, offset_e, offset_u = map(float, neu_offset)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Skipping NEU offset with non-numeric values for {sat}, {freq_id} at {valid_from_ts}: {neu_offset}. Error: {e}")
+                    continue
+
+                offsets.append({
                     "sv": sat,
-                    "valid_from": valid_from_ts,
+                    "time": valid_from_ts,
                     "frequency": freq_id,
-                    "north": freq_data["neu"][0],
-                    "east": freq_data["neu"][1],
-                    "up": freq_data["neu"][2],
+                    "offset_n": offset_n,
+                    "offset_e": offset_e,
+                    "offset_u": offset_u,
                 })
 
-    # Convert satellite data to DataFrame
-    sat_df = pd.DataFrame(satellite_data)
-    sat_df_indexed = sat_df.set_index(["sv", "valid_from"])
+    # --- 3. Create DataFrame ---
+    # If 'records' is empty, this will create an empty DataFrame
+    df = pd.DataFrame(records)
+    df_offset = pd.DataFrame(offsets)
 
-    # Convert frequency data to DataFrame
-    freq_df = pd.DataFrame(frequency_data)
-    freq_df_indexed = freq_df.set_index(["sv", "frequency", "valid_from"])
+    # --- 4. Prepare for xarray ---
+    # Set the multi-index directly
+    try:
+        df = df.set_index(["time", "sv"])
+        df_offset = df_offset.set_index(["time", "sv", "frequency"])
+    except KeyError as e:
+        logger.error(f"Failed to set multi-index. Missing column: {e}. Columns present: {df.columns.tolist()}")
+        raise RuntimeError("DataFrame construction failed, cannot set multi-index.") from e
 
-    # Combine into a single xarray Dataset
-    ds = xr.merge([
-        xr.Dataset.from_dataframe(dataframe=sat_df_indexed),
-        xr.Dataset.from_dataframe(dataframe=freq_df_indexed)
-    ])
+    # --- 5. Convert to xarray Dataset ---
+    try:
+        ds = xr.Dataset.from_dataframe(df)
+        ds_offset = xr.Dataset.from_dataframe(df_offset)
+    except Exception as e:
+        logger.error(f"Failed to convert DataFrame to xarray Dataset: {e}")
+        raise RuntimeError("xarray Dataset conversion failed.") from e
 
-    # Add dataset metadata
+    # --- 6. Combine Offsets into a single DataArray ---
+    # Stack the individual offset variables into a new 'offset' variable with a 'NEU' dimension
+    try:
+        ds_offset_aligned = ds_offset[['offset_n', 'offset_e', 'offset_u']].to_array(dim='NEU', name='offset')
+        # Assign proper coordinate values to the new NEU dimension
+        ds_offset_aligned = ds_offset_aligned.assign_coords(NEU=['n', 'e', 'u'])
+    except KeyError as e:
+        logger.error(f"Failed to combine offsets. Missing variable: {e}. Variables present: {list(ds.data_vars)}")
+        raise RuntimeError("Offset combination failed due to missing variables.") from e
+
+
+    # --- 7. Final Dataset ---
+    # Drop the original individual offset variables
+    # ds_offset_aligned = ds_offset_aligned.drop_vars(['offset_n', 'offset_e', 'offset_u'])
+    # Merge the combined offset variable back into the dataset
+    ds = xr.merge([ds, ds_offset_aligned])
+
+    # --- 8. Reorder NEU ---
+    ds = ds.transpose('time', 'sv', 'frequency', 'NEU')
+
+    # --- 8. Add Attributes ---
     ds.attrs.update({
-        "version": parser.meta.get("version"),
-        "sat_sys": parser.meta.get("sat_sys"),
-        "pcv_type": parser.meta.get("pcv_type"),
-        "description": "Satellite antenna phase center offset values from ANTEX file",
+        "version": meta.get("version"),
+        "sat_sys": meta.get("sat_sys"),
+        "pcv_type": meta.get("pcv_type"),
+        "description": "Satellite antenna phase center offset (PCO) values from ANTEX file",
+        "source_file": path
     })
 
-    # Add variable metadata
-    ds['north'].attrs.update({
-        "long_name": "North component of phase center offset",
+    # Add variable/coordinate attributes
+    ds['offset'].attrs.update({
+        "long_name": "Phase center offset (NEU)",
         "units": "m",
-        "description": "Offset in North direction in satellite body-fixed reference frame"
+        "description": "North, East, Up components of the PCO in the satellite body-fixed reference frame"
     })
-
-    ds['east'].attrs.update({
-        "long_name": "East component of phase center offset",
-        "units": "m",
-        "description": "Offset in East direction in satellite body-fixed reference frame"
-    })
-
-    ds['up'].attrs.update({
-        "long_name": "Up component of phase center offset",
-        "units": "m",
-        "description": "Offset in Up direction in satellite body-fixed reference frame"
-    })
-
-    ds['cospar_id'].attrs.update({
-        "long_name": "COSPAR ID",
-        "description": "Committee on Space Research satellite identifier"
-    })
-
-    ds['sat_code'].attrs.update({
-        "long_name": "Satellite Code",
-        "description": "Satellite specific identification code"
-    })
-
-    ds['sat_type'].attrs.update({
-        "long_name": "Satellite Type",
-        "description": "Type or model of the satellite"
-    })
+    # Attributes for coordinates (now index levels or separate coordinates)
+    ds['time'].attrs.update({"long_name": "Validity start time"})
+    ds['NEU'].attrs.update({"long_name": "NEU components", "description": "North, East, Up"})
+    ds['sv'].attrs.update({"long_name": "Satellite vehicle identifier"})
+    ds['frequency'].attrs.update({"long_name": "Frequency identifier"})
+    ds['valid_until'].attrs.update({"long_name": "Validity end time"})
+    ds['cospar_id'].attrs.update({"long_name": "COSPAR ID"})
+    ds['sat_code'].attrs.update({"long_name": "Satellite Code"})
+    ds['sat_type'].attrs.update({"long_name": "Satellite Type"})
 
     return ds
 

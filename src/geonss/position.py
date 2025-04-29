@@ -16,7 +16,6 @@ import logging
 
 import numpy as np
 
-from geonss.filter import *
 from geonss.constellation import *
 from geonss.coordinates import *
 from geonss.rinexmanager.util import *
@@ -68,14 +67,14 @@ def main():
     # observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/GEOP085R.25o"))
     # navigation = load_cached_navigation_message(datetime(2025, 3, 26), "WTZR00DEU")
 
-    observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx"))
+    observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx"), use={'G', 'E'})
     navigation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_MN.rnx"))
 
     navigation = select_constellations(navigation, galileo=True)
 
     # Only use a subset of the data for testing
-    # observation = observation.isel(time=np.random.choice(len(observation.time), size=1, replace=False))
-    observation = observation.isel(time=slice(5, 31))
+    observation = observation.isel(time=np.sort(np.random.choice(len(observation.time), size=50, replace=False)))
+    # observation = observation.isel(time=slice(5, 31))
 
     # Compute positions
     position_results = single_point_position(observation, navigation)

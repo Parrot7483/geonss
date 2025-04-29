@@ -199,12 +199,14 @@ def load_cached_navigation_message(date: datetime, station: str) -> xr.Dataset:
     return ds
 
 
-def load_cached_rinex(rinex_path: str) -> xr.Dataset:
+def load_cached_rinex(rinex_path: str, use: set[str] = None) -> xr.Dataset:
     """
     Load a rinex file and return a xarray Dataset. The processed dataset is cached.
 
     Parameters:
         rinex_path (str): The path to the rinex file.
+        use (str, optional): Single character(s) for constellation type filter.
+                            G=GPS, R=GLONASS, E=Galileo, S=SBAS, J=QZSS, C=BeiDou, I=IRNSS
 
     Returns:
         xr.Dataset: The dataset loaded from cache or created from the rinex file.
@@ -216,14 +218,24 @@ def load_cached_rinex(rinex_path: str) -> xr.Dataset:
 
     # Create a cache file name based on the rinex file name.
     base_name = os.path.basename(rinex_path)
-    cache_file = os.path.join(cache_dir, base_name + ".nc")
+
+    # Handle the constellation filter in the cache file name
+    constellation_suffix = ""
+    if use:
+        constellation_list = sorted([ sv.lower() for sv in use])
+
+        # Sort the constellation characters and make them lowercase for the filename
+        constellation_suffix = "." + "".join(constellation_list)
+
+    cache_file = os.path.join(cache_dir, base_name + constellation_suffix + ".nc")
 
     if os.path.isfile(cache_file):
         logger.info("Using cached netcdf from %s", cache_file)
         ds = xr.open_dataset(cache_file)
     else:
         logger.info("Processing rinex file from %s", rinex_path)
-        ds = gr.load(rinex_path)
+        # Pass the use parameter to gr.load (should be uppercase for the API)
+        ds = gr.load(rinex_path, use=use)
         ds.to_netcdf(cache_file)
         logger.info("Saved netcdf to cache at %s", cache_file)
 
