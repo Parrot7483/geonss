@@ -14,7 +14,7 @@ The module implements coordinate transformations using WGS-84 reference ellipsoi
 parameters for accurate positioning and navigation applications.
 """
 
-from typing import Tuple, List, Any, Union
+from typing import List, Any, Self
 
 import numpy as np
 
@@ -28,9 +28,9 @@ class ECEFPosition:
     """
 
     def __init__(self,
-                 x: Union[float, np.floating] = 0,
-                 y: Union[float, np.floating] = 0,
-                 z: Union[float, np.floating] = 0
+                 x: float | np.floating = 0,
+                 y: float | np.floating = 0,
+                 z: float | np.floating = 0,
                  ):
         assert np.isfinite(x) and np.isfinite(y) and np.isfinite(z), "ECEF coordinates must be finite numbers"
         self.array = np.array([x, y, z], dtype=np.float64)
@@ -66,19 +66,19 @@ class ECEFPosition:
         self.array[2] = (np.float64(value))
 
     @classmethod
-    def from_tuple(cls, coordinates: (float, float, float)) -> 'ECEFPosition':
+    def from_tuple(cls, coordinates: (float, float, float)) -> Self:
         """Create an ECEF position from a tuple (x, y, z)."""
         return cls(*coordinates)
 
     @classmethod
-    def from_array(cls, array: np.ndarray) -> 'ECEFPosition':
+    def from_array(cls, array: np.ndarray) -> Self:
         """Create an ECEF position from a numpy array [x, y, z]."""
         assert array.shape == (3,), f"ECEF position array must have shape (3,), got {array.shape}"
         return cls(np.float64(array[0]), np.float64(array[1]), np.float64(array[2]))
 
     # TODO: Maybe it is possible to make this the default behavior. Could make it faster
     @classmethod
-    def wrap_array(cls, array: np.ndarray) -> 'ECEFPosition':
+    def wrap_array(cls, array: np.ndarray) -> Self:
         """
         Create an ECEF position by directly referencing the provided numpy array.
 
@@ -97,7 +97,7 @@ class ECEFPosition:
         return position
 
     @classmethod
-    def from_positions_list_mean(cls, positions: List['ECEFPosition']) -> 'ECEFPosition':
+    def from_positions_list_mean(cls, positions: List[Self]) -> Self:
         """Calculate the mean position given a list of ECEFPosition objects."""
         # assert len(positions) > 0, "Cannot calculate mean of empty positions list"
         x_mean = np.mean([p.x for p in positions])
@@ -106,7 +106,7 @@ class ECEFPosition:
         return cls(x_mean, y_mean, z_mean)
 
     @classmethod
-    def from_lla(cls, lla: 'LLAPosition') -> 'ECEFPosition':
+    def from_lla(cls, lla: 'LLAPosition') -> Self:
         """Convert LLA position to ECEF position."""
         return lla.to_ecef()
 
@@ -242,15 +242,15 @@ class ECEFPosition:
 
         return LLAPosition(np.degrees(latitude_rad), np.degrees(longitude_rad), altitude_m)
 
-    def to_tuple(self) -> Tuple[np.float64, np.float64, np.float64]:
+    def to_tuple(self) -> (np.float64, np.float64, np.float64):
         """Convert to tuple (x, y, z)."""
         return self.x, self.y, self.z
 
-    def distance_to(self, other: 'ECEFPosition') -> np.float64:
+    def distance_to(self, other: Self) -> np.float64:
         """Calculate the distance to another ECEF position in meters."""
         return np.linalg.norm(other.array - self.array)
 
-    def horizontal_and_altitude_distance_to(self, other: 'ECEFPosition') -> (float, float):
+    def horizontal_and_altitude_distance_to(self, other: Self) -> (float, float):
         """
         Calculate horizontal distance and altitude difference between this position and another.
 
@@ -272,7 +272,7 @@ class ECEFPosition:
         # Use the LLA method to calculate distances
         return self_lla.horizontal_and_altitude_distance_to(other_lla)
 
-    def elevation_angle(self, observable: 'ECEFPosition' | np.ndarray) -> np.float64 | np.ndarray:
+    def elevation_angle(self, observable: Self | np.ndarray) -> np.float64 | np.ndarray:
         """
         Calculate elevation angle from this position to one or multiple observables.
 
@@ -324,7 +324,7 @@ class ECEFPosition:
 
             return elevations
 
-    def rotate_z(self, angle: float) -> 'ECEFPosition':
+    def rotate_z(self, angle: float) -> Self:
         """
         Rotate the position around the Z-axis by the specified angle.
 
@@ -351,7 +351,7 @@ class ECEFPosition:
         self.array = rotation_matrix @ self.array
         return self
 
-    def copy(self) -> 'ECEFPosition':
+    def copy(self) -> Self:
         """Convenience method to create a shallow copy of this position."""
         return self.__copy__()
 
@@ -362,24 +362,6 @@ class ECEFPosition:
     def __eq__(self, other: Any) -> bool:
         """Check equality with another ECEFPosition using numpy's allclose for array comparison."""
         return bool(np.allclose(self.array, other.array))
-
-    def __add__(self, other: 'ECEFPosition') -> 'ECEFPosition':
-        """Add another ECEFPosition to this one and return a new ECEFPosition representing the sum"""
-        return ECEFPosition.from_array(self.array + other.array)
-
-    def __sub__(self, other: 'ECEFPosition') -> 'ECEFPosition':
-        """Subtract another ECEFPosition from this one and return a new ECEFPosition representing the difference"""
-        return ECEFPosition.from_array(self.array - other.array)
-
-    def __iadd__(self, other: 'ECEFPosition') -> 'ECEFPosition':
-        """Add another ECEFPosition to this one in-place and return self after addition"""
-        self.array += other.array
-        return self
-
-    def __isub__(self, other: 'ECEFPosition') -> 'ECEFPosition':
-        """Subtract another ECEFPosition from this one in-place and return self after subtraction"""
-        self.array -= other.array
-        return self
 
     def __repr__(self) -> str:
         return f"ECEF({float(self.x):.3f}, {float(self.y):.3f}, {float(self.z):.3f}) m"
@@ -393,9 +375,9 @@ class LLAPosition:
     """
 
     def __init__(self,
-                 latitude: Union[float, np.floating] = 0,
-                 longitude: Union[float, np.floating] = 0,
-                 altitude: Union[float, np.floating] = 0
+                 latitude: float | np.floating = 0,
+                 longitude: float |  np.floating = 0,
+                 altitude: float | np.floating = 0
                  ):
         assert -90 <= latitude <= 90, f"Latitude must be between -90 and 90 degrees, got {latitude}"
         assert -180 <= longitude <= 180, f"Longitude must be between -180 and 180 degrees, got {longitude}"
@@ -418,33 +400,33 @@ class LLAPosition:
         return np.float64(self.array[2])
 
     @property
-    def lat(self):
+    def lat(self) -> np.float64:
         """Get latitude as a numpy float64."""
         return self.latitude
 
     @property
-    def lon(self):
+    def lon(self) -> np.float64:
         """Get longitude as a numpy float64."""
         return self.longitude
 
     @property
-    def alt(self):
+    def alt(self) -> np.float64:
         """Get altitude as a numpy float64."""
         return self.altitude
 
     @classmethod
-    def from_tuple(cls, coordinates: (float, float, float)) -> 'LLAPosition':
+    def from_tuple(cls, coordinates: (float, float, float)) -> Self:
         """Create an LLA position from a tuple (latitude, longitude, altitude)."""
         return cls(*coordinates)
 
     @classmethod
-    def from_array(cls, array: np.ndarray) -> 'LLAPosition':
+    def from_array(cls, array: np.ndarray) -> Self:
         """Create an LLA position from a numpy array [latitude, longitude, altitude]."""
         assert array.shape == (3,), f"LLA position array must have shape (3,), got {array.shape}"
         return cls(np.float64(array[0]), np.float64(array[1]), np.float64(array[2]))
 
     @classmethod
-    def from_ecef(cls, ecef: 'ECEFPosition') -> 'LLAPosition':
+    def from_ecef(cls, ecef: 'ECEFPosition') -> Self:
         """Convert ECEF position to LLA position."""
         return ecef.to_lla()
 
@@ -467,7 +449,7 @@ class LLAPosition:
         """Convert to tuple (latitude, longitude, altitude)."""
         return self.latitude, self.longitude, self.altitude
 
-    def horizontal_and_altitude_distance_to(self, other: 'LLAPosition') -> (np.float64, np.float64):
+    def horizontal_and_altitude_distance_to(self, other: Self) -> (np.float64, np.float64):
         """
         Calculate horizontal distance and altitude difference between this position and another.
 
@@ -495,7 +477,7 @@ class LLAPosition:
 
         return horizontal_distance, altitude_diff
 
-    def distance_to(self, other: 'LLAPosition') -> np.float64:
+    def distance_to(self, other: Self) -> np.float64:
         """Calculate the distance to another LLA position in meters."""
         return self.to_ecef().distance_to(other.to_ecef())
 
@@ -503,7 +485,7 @@ class LLAPosition:
         """Generate a Google Maps link for this position."""
         return f"https://www.google.com/maps?q={float(self.latitude)},{float(self.longitude)}&h={float(self.altitude)}"
 
-    def copy(self) -> 'LLAPosition':
+    def copy(self) -> Self:
         """Convenience method to create a shallow copy of this position."""
         return self.__copy__()
 
@@ -516,7 +498,5 @@ class LLAPosition:
         lon_direction = "E" if self.longitude >= 0 else "W"
         return f"LLA({np.abs(self.latitude):.6f}°{lat_direction}, {np.abs(self.longitude):.6f}°{lon_direction}, {self.altitude:.3f} m)"
 
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, LLAPosition):
-            return False
+    def __eq__(self, other: Self) -> bool:
         return bool(np.allclose(self.array, other.array))

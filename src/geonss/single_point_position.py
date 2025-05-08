@@ -1,12 +1,13 @@
-import xarray
+import xarray as xr
+import numpy as np
+import logging
 
-from constants import *
-from geonss.algorithms import *
-from geonss.coordinates import *
+from geonss.constants import SPEED_OF_LIGHT, OMEGA_E
+from geonss.algorithms import iterative_reweighted_least_squares, huber_weight
+from geonss.coordinates import ECEFPosition
 from geonss.interpolation import interpolate_orbit_positions
-from geonss.navigation import *
-from geonss.parsing.util import *
-from geonss.ranges import *
+from geonss.navigation import calculate_satellite_positions
+from geonss.ranges import tropospheric_delay, calculate_pseudo_ranges
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ def build_positioning_model(
 
     # Filter to valid satellites and align datasets
     ranges = ranges.dropna(dim="sv", subset=["pseudo_range"])
-    ranges, satellites = xarray.align(ranges, satellites, join="inner", exclude=["time"])
+    ranges, satellites = xr.align(ranges, satellites, join="inner", exclude=["time"])
 
     # Extract data for valid satellites
     satellite_ranges = ranges.pseudo_range.values
@@ -160,8 +161,10 @@ def build_positioning_model(
     return geometry_matrix, residuals, weights
 
 
-def prepare_ranges_satellite_positions(observation: xr.Dataset, navigation: xr.Dataset) -> Tuple[
-    xr.Dataset, xr.Dataset]:
+def prepare_ranges_satellite_positions(
+        observation: xr.Dataset,
+        navigation: xr.Dataset
+) -> (xr.Dataset, xr.Dataset):
     """
     Prepare data by selecting common satellites and calculating ranges and positions.
 
@@ -174,7 +177,7 @@ def prepare_ranges_satellite_positions(observation: xr.Dataset, navigation: xr.D
     """
     # Select common satellites
     logger.info("Selecting common satellites between observation and navigation data")
-    observation, navigation = xarray.align(observation, navigation, exclude='time')
+    observation, navigation = xr.align(observation, navigation, exclude='time')
 
     # Calculate pseudo ranges
     logger.info("Calculating pseudo ranges")
@@ -189,11 +192,11 @@ def prepare_ranges_satellite_positions(observation: xr.Dataset, navigation: xr.D
 
 def single_point_position(
         observation: xr.Dataset,
-        navigation: Optional[xr.Dataset] = None,
-        sp3: Optional[xr.Dataset] = None,
-        antex: Optional[xr.Dataset] = None,
+        navigation: xr.Dataset | None = None,
+        sp3: xr.Dataset | None = None,
+        antex: xr.Dataset | None = None,
         a_priori_position: ECEFPosition = ECEFPosition(),
-        a_priori_clock_bias: Optional[np.float64] = np.float64(0),
+        a_priori_clock_bias: np.float64 = np.float64(0),
         enable_signal_travel_time_correction: bool = True,
         enable_earth_rotation_correction: bool = True,
         enable_tropospheric_correction: bool = True,
@@ -229,7 +232,7 @@ def single_point_position(
     # Calculate pseudo ranges
     if sp3 and antex:
         logger.info("Selecting common satellites between observation and sp3 data")
-        observation, sp3 = xarray.align(observation, sp3, exclude='time')
+        observation, sp3 = xr.align(observation, sp3, exclude='time')
 
         logger.info("Calculating pseudo ranges")
         ranges = calculate_pseudo_ranges(observation)
@@ -239,7 +242,7 @@ def single_point_position(
 
     elif navigation:
         logger.info("Selecting common satellites between observation and navigation data")
-        observation, navigation = xarray.align(observation, navigation, exclude='time')
+        observation, navigation = xr.align(observation, navigation, exclude='time')
 
         logger.info("Calculating pseudo ranges")
         ranges = calculate_pseudo_ranges(observation)
