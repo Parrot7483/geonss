@@ -1,6 +1,7 @@
-import matplotlib.pyplot as plt
 import os
 from typing import List, Optional
+
+import matplotlib.pyplot as plt
 
 from geonss.coordinates import ECEFPosition
 

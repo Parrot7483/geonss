@@ -14,14 +14,14 @@ The module implements algorithms for satellite position calculation
 based on the WGS-84 reference frame and GNSS constellation parameters.
 """
 
-from typing import Tuple
 import logging
+from typing import Tuple
 
 import numpy as np
 import scipy as sp
 import xarray as xr
 
-from geonss.constants import *
+from geonss.constants import GM, OMEGA_E, REL_CONST
 from geonss.time import datetime_gps_to_week_and_seconds
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,7 @@ def eccentric_anomaly(m: np.ndarray | float, e: np.ndarray | float) -> np.ndarra
     Returns:
         array_like: Eccentric anomaly in radians
     """
+
     def kepler_equation(e_anom, mean_anom, ecc):
         """Kepler's equation: E - e*sin(E) - M = 0"""
         return e_anom - ecc * np.sin(e_anom) - mean_anom
@@ -58,6 +59,7 @@ def eccentric_anomaly(m: np.ndarray | float, e: np.ndarray | float) -> np.ndarra
         tol=1e-10,
         maxiter=100
     )
+
 
 def satellite_position_velocity_clock_correction(
         ephemeris: xr.Dataset,
@@ -95,7 +97,7 @@ def satellite_position_velocity_clock_correction(
 
     # Handle week crossover
     t_k = np.where(t_k > np.float64(302400), t_k - np.float64(604800),
-        np.where(t_k < np.float64(-302400), t_k + np.float64(604800), t_k))
+                   np.where(t_k < np.float64(-302400), t_k + np.float64(604800), t_k))
 
     # Convert sqrt_a to a
     a = np.square(sqrt_a)
@@ -207,9 +209,12 @@ def satellite_position_velocity_clock_correction(
     # Satellite clock correction in meter
     delta_t_oc = gps_seconds - seconds_of_clock
     delta_t_sv = a0 + a1 * delta_t_oc + a2 * np.square(delta_t_oc) + delta_tr
-    delta_t_sv_m = delta_t_sv * SPEED_OF_LIGHT
 
-    return x, y, z, vx, vy, vz, delta_t_sv_m
+    # Convert seconds to microseconds
+    delta_t_sv_ms = delta_t_sv * 1e6
+
+    return x, y, z, vx, vy, vz, delta_t_sv_ms
+
 
 def calculate_satellite_positions(
         nav_data: xr.Dataset,
@@ -267,7 +272,7 @@ def calculate_satellite_positions(
         np.nan,  # Initialize with NaNs
         dims=['time', 'sv'],
         coords={'time': ranges.time, 'sv': ranges.sv},
-        attrs={'long_name': 'Satellite Clock Bias', 'units': 'second'}
+        attrs={'long_name': 'Satellite Clock Bias', 'units': 'microsecond'}
     )
 
     for satellite in ranges.sv.values:

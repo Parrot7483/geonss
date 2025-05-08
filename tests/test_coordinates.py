@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 
-from geonss.coordinates import ECEFPosition, LLAPosition
+from geonss.coordinates import ECEFPosition, LLAPosition, ecef_to_lla_ferrari_heikkinen
 
 TEST_POSITIONS = [
     (6378137.0, 0.0, 0.0, 0.0, 0.0, 0.0),  # equator at prime meridian
@@ -14,6 +14,11 @@ TEST_POSITIONS = [
 @pytest.mark.parametrize("x,y,z,lat,lon,alt", TEST_POSITIONS)
 def test_ecef_to_lla_coordinates(x, y, z, lat, lon, alt):
     lat_calc, lon_calc, alt_calc = ECEFPosition(x, y, z).to_lla().to_tuple()
+
+    lat_calc_2, lon_calc_2, alt_calc_2 = ecef_to_lla_ferrari_heikkinen(x, y, z)
+    assert np.abs(lat_calc_2 - lat) < np.float64(1e-6)
+    assert np.abs(lon_calc_2 - lon) < np.float64(1e-6)
+    assert np.abs(alt_calc_2 - alt) < np.float64(1e-2)
 
     assert np.abs(lat_calc - lat) < np.float64(1e-6)
     assert np.abs(lon_calc - lon) < np.float64(1e-6)

@@ -1,23 +1,21 @@
+import base64
+import gzip
+import io
+import logging
+import os
+import shutil
 from datetime import datetime
 from typing import Optional, TextIO
-import base64
-import io
-import os
-import gzip
-import logging
-import shutil
 
-
-import georinex as gr
 import paramiko
 import xarray as xr
 from platformdirs import user_cache_dir
 
+import georinex as gr
 
 # noinspection SpellCheckingInspection
 # ESA GNSS host ECDSA key for authentication
-GNSS_ESA_HOST_KEY_STRING = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBPuHKpcr9wJQreRG7u1lur/PXGqFAzOUe5tHn4g2HhYhmsWeV4TB6lTL26NabaAHRYaFppo9cmSfM6W73YnxeCQ=" # pylint: disable=line-too-long
-
+GNSS_ESA_HOST_KEY_STRING = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBPuHKpcr9wJQreRG7u1lur/PXGqFAzOUe5tHn4g2HhYhmsWeV4TB6lTL26NabaAHRYaFppo9cmSfM6W73YnxeCQ="  # pylint: disable=line-too-long
 
 logger = logging.getLogger(__name__)
 
@@ -198,5 +196,3 @@ def load_cached_navigation_message(date: datetime, station: str) -> xr.Dataset:
                 date.strftime('%Y-%m-%d'))
 
     return ds
-
-

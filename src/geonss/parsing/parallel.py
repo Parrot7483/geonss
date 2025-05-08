@@ -1,16 +1,16 @@
-import pathlib
 import logging
+import pathlib
 from datetime import datetime
 
-import georinex as gr
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-
+import georinex as gr
 from .util import split_time_range
 
 logger = logging.getLogger(__name__)
+
 
 def _load_period(args):
     """Helper function to load a single time period from a RINEX file."""
@@ -100,11 +100,11 @@ def load_parallel(
     # Subtract 1 microsecond to avoid overlap
     timestamps = split_time_range(start_time, end_time, processes)
     periods = []
-    for i in range(len(timestamps)-1):
-        if i == len(timestamps)-2:  # Last period
-            periods.append((timestamps[i], timestamps[i+1]))  # Use exact end time
+    for i in range(len(timestamps) - 1):
+        if i == len(timestamps) - 2:  # Last period
+            periods.append((timestamps[i], timestamps[i + 1]))  # Use exact end time
         else:
-            periods.append((timestamps[i], timestamps[i+1] - np.timedelta64(1, "us")))  # Avoid overlap
+            periods.append((timestamps[i], timestamps[i + 1] - np.timedelta64(1, "us")))  # Avoid overlap
 
     if verbose:
         logger.info(f"Processing file {path} with {processes} processes")
@@ -130,5 +130,3 @@ def load_parallel(
         return combined_ds
     else:
         raise ValueError("No data was loaded from the RINEX file")
-
-

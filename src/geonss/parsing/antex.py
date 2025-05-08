@@ -1,12 +1,13 @@
-import os
-import xarray as xr
-import pandas as pd
-import numpy as np
-from midgard import parsers
 import logging
+import os
 
+import numpy as np
+import pandas as pd
+import xarray as xr
+from midgard import parsers
 
 logger = logging.getLogger(__name__)
+
 
 def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
     """Convert ANTEX data to an xarray Dataset containing Satellite Phase Center Offset (PCO).
@@ -43,7 +44,7 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
     satellite_keys = {key for key in data if isinstance(key, str) and len(key) == 3 and key[0] in 'GREJCISM'}
 
     for sat in satellite_keys:
-        valid_periods = data.get(sat, {}) # Use .get for safety
+        valid_periods = data.get(sat, {})  # Use .get for safety
         if not isinstance(valid_periods, dict):
             logger.warning(f"Unexpected data structure for satellite {sat} in parsed data. Skipping.")
             continue
@@ -51,7 +52,8 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
         for valid_from_str, values in valid_periods.items():
             # Check if 'values' is a dictionary before proceeding
             if not isinstance(values, dict):
-                logger.warning(f"Skipping invalid period data for {sat} at {valid_from_str}. Expected dict, got {type(values)}.")
+                logger.warning(
+                    f"Skipping invalid period data for {sat} at {valid_from_str}. Expected dict, got {type(values)}.")
                 continue
 
             try:
@@ -59,7 +61,8 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
                 valid_from_ts = pd.to_datetime(valid_from_str)
                 valid_until_ts = pd.to_datetime(values["valid_until"])
             except (ValueError, TypeError, KeyError) as e:
-                logger.warning(f"Skipping period for {sat} due to invalid/missing date format: {valid_from_str} or 'valid_until'. Error: {e}")
+                logger.warning(
+                    f"Skipping period for {sat} due to invalid/missing date format: {valid_from_str} or 'valid_until'. Error: {e}")
                 continue
 
             cospar_id = values.get("cospar_id", "")
@@ -84,13 +87,15 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
                 neu_offset = freq_data["neu"]
                 # Ensure NEU data is a list/tuple/array of 3 numbers
                 if not isinstance(neu_offset, (list, tuple, np.ndarray)) or len(neu_offset) != 3:
-                    logger.warning(f"Skipping invalid NEU offset format/length for {sat}, {freq_id} at {valid_from_ts}: {neu_offset}")
+                    logger.warning(
+                        f"Skipping invalid NEU offset format/length for {sat}, {freq_id} at {valid_from_ts}: {neu_offset}")
                     continue
                 try:
                     # Convert to float, handle potential Nones or non-numeric values
                     offset_n, offset_e, offset_u = map(float, neu_offset)
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"Skipping NEU offset with non-numeric values for {sat}, {freq_id} at {valid_from_ts}: {neu_offset}. Error: {e}")
+                    logger.warning(
+                        f"Skipping NEU offset with non-numeric values for {sat}, {freq_id} at {valid_from_ts}: {neu_offset}. Error: {e}")
                     continue
 
                 offsets.append({
@@ -133,7 +138,6 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
     except KeyError as e:
         logger.error(f"Failed to combine offsets. Missing variable: {e}. Variables present: {list(ds.data_vars)}")
         raise RuntimeError("Offset combination failed due to missing variables.") from e
-
 
     # --- 7. Final Dataset ---
     # Drop the original individual offset variables

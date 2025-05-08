@@ -1,5 +1,6 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+
 
 def plot_distance(distance_da, connect_points=False):
     """
@@ -50,4 +51,3 @@ def plot_distance(distance_da, connect_points=False):
     plt.ylabel("Distance (m)")
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.show()
-

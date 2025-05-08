@@ -58,6 +58,7 @@ class Constellation(Enum):
 
         return self.value < other.value
 
+
 def get_common_satellites(dataset_a: xr.Dataset, dataset_b: xr.Dataset) -> list[str]:
     """
     Find observable IDs that exist in both datasets.
@@ -159,24 +160,3 @@ def select_constellations(
 
     mask = [keep_sv(sv) for sv in df.sv.values]
     return df.sel(sv=df.sv[mask])
-
-
-def select_satellites(
-        df: Union[xr.Dataset, xr.DataArray],
-        sv_list: list[str]
-) -> Union[xr.Dataset, xr.DataArray]:
-    """
-    Select specific satellites to keep in the dataset.
-
-    Args:
-        df : xarray.Dataset or xarray.DataArray
-            Input data containing observable identifiers in a 'sv' coordinate/variable
-        sv_list : list[str]
-            List of observable IDs to keep (e.g., ['G01', 'R24', 'E11'])
-
-    Returns:
-        xarray.Dataset or xarray.DataArray
-            Data containing only specified satellites
-    """
-    sv_set = {sv.upper() for sv in sv_list}
-    return df.sel(sv=[s for s in df.sv.values if s.upper() in sv_set])

@@ -14,9 +14,10 @@ and navigation applications.
 """
 
 import datetime
-import numpy as np
 import functools
 from typing import Union, Tuple
+
+import numpy as np
 
 
 @functools.singledispatch
@@ -134,6 +135,7 @@ def datetime_utc_to_datetime_gps(dt: Union[np.datetime64, datetime.datetime, str
     gps_time = dt + np.timedelta64(leap_second_offset, 's')
 
     return gps_time
+
 
 def datetime_utc_to_week_and_seconds(dt: Union[np.datetime64, datetime.datetime, str]) -> Tuple[np.int32, np.float64]:
     """

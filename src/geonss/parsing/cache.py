@@ -1,15 +1,15 @@
-import os
 import logging
-from datetime import timedelta
+import os
 from datetime import datetime
+from datetime import timedelta
 
-import georinex as gr
 import xarray as xr
-
 from platformdirs import user_cache_dir
 
+import georinex as gr
 
 logger = logging.getLogger(__name__)
+
 
 def load_cached(
         rinex_path: str,
@@ -43,7 +43,7 @@ def load_cached(
     # Handle the constellation filter in the cache file name
     constellation_suffix = ""
     if use:
-        constellation_list = sorted([ sv.lower() for sv in use])
+        constellation_list = sorted([sv.lower() for sv in use])
         # Sort the constellation characters and make them lowercase for the filename
         constellation_suffix = "." + "".join(constellation_list)
 

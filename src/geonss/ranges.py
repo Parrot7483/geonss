@@ -13,11 +13,14 @@ References:
 - Tropospheric Model: https://gssc.esa.int/navipedia/index.php?title=Galileo_Tropospheric_Correction_Model
 """
 
-import numpy as np
+import logging
 from functools import partial
 from typing import Tuple
+
+import numpy as np
+import xarray as xr
+
 from geonss.time import datetime_to_day_of_year
-from geonss.rinexmanager.util import *
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +60,7 @@ interpolate_wet_a = partial(np.interp, xp=latitudes, fp=a_wet)
 interpolate_wet_b = partial(np.interp, xp=latitudes, fp=b_wet)
 interpolate_wet_c = partial(np.interp, xp=latitudes, fp=c_wet)
 
+
 def niell_mapping(
         time: np.datetime64,
         elevation: np.ndarray | np.float64,
@@ -95,9 +99,12 @@ def niell_mapping(
     elevation = np.clip(elevation, min_elevation, None)
 
     height_km = height / 1000.0
-    a_d = interpolate_hydrostatic_coefficient(day_of_year, latitude, interpolate_hydrostatic_avg_a, interpolate_hydrostatic_amp_a)
-    b_d = interpolate_hydrostatic_coefficient(day_of_year, latitude, interpolate_hydrostatic_avg_b, interpolate_hydrostatic_amp_b)
-    c_d = interpolate_hydrostatic_coefficient(day_of_year, latitude, interpolate_hydrostatic_avg_c, interpolate_hydrostatic_amp_c)
+    a_d = interpolate_hydrostatic_coefficient(day_of_year, latitude, interpolate_hydrostatic_avg_a,
+                                              interpolate_hydrostatic_amp_a)
+    b_d = interpolate_hydrostatic_coefficient(day_of_year, latitude, interpolate_hydrostatic_avg_b,
+                                              interpolate_hydrostatic_amp_b)
+    c_d = interpolate_hydrostatic_coefficient(day_of_year, latitude, interpolate_hydrostatic_avg_c,
+                                              interpolate_hydrostatic_amp_c)
 
     m_dry = mapping(elevation, a_d, b_d, c_d) + delta_mapping(elevation, height_km)
 
@@ -108,6 +115,7 @@ def niell_mapping(
     m_wet = mapping(elevation, a_w, b_w, c_w)
 
     return m_dry, m_wet
+
 
 def tropospheric_delay(time, elevation, height, latitude):
     """
@@ -128,13 +136,14 @@ def tropospheric_delay(time, elevation, height, latitude):
     # Calculate tropospheric delay
     return m_dry * zhd + m_wet * zwd
 
+
 def ionospheric_correction(
         c1: np.float64 | np.ndarray | xr.DataArray,
         c5: np.float64 | np.ndarray | xr.DataArray,
         s1: np.float64 | np.ndarray | xr.DataArray,
         s5: np.float64 | np.ndarray | xr.DataArray,
-        f1: np.float64 | np.ndarray | xr.DataArray = np.float64(1575.42), # L1 / E1 frequency in MHz
-        f5: np.float64 | np.ndarray | xr.DataArray = np.float64(1176.45), # L5 / E5a frequency in MHz
+        f1: np.float64 | np.ndarray | xr.DataArray = np.float64(1575.42),  # L1 / E1 frequency in MHz
+        f5: np.float64 | np.ndarray | xr.DataArray = np.float64(1176.45),  # L5 / E5a frequency in MHz
 ) -> (np.float64 | np.ndarray | xr.DataArray, np.float64 | np.ndarray | xr.DataArray):
     """
     Ionospheric correction using the dual-frequency ionosphere-free combination.
@@ -163,8 +172,8 @@ def ionospheric_correction(
     """
 
     # calculate ionospheric-free combination parameters
-    f1_sq = f1**2
-    f2_sq = f5**2
+    f1_sq = f1 ** 2
+    f2_sq = f5 ** 2
     denominator = f1_sq - f2_sq
 
     alpha = f1_sq / denominator
@@ -174,13 +183,13 @@ def ionospheric_correction(
     iono_free = alpha * c1 + beta * c5
 
     # Calculate linear SNR for weighting
-    w1 = 10**(s1 / 10.0)
-    w2 = 10**(s5 / 10.0)
+    w1 = 10 ** (s1 / 10.0)
+    w2 = 10 ** (s5 / 10.0)
 
     # Calculate the variance term for the weight
-    epsilon = 1e-12 # Small value to avoid division by exactly zero SNR
-    variance_term = (alpha**2 / xr.ufuncs.maximum(w1, epsilon)) + \
-                    (beta**2 / xr.ufuncs.maximum(w2, epsilon))
+    epsilon = 1e-12  # Small value to avoid division by exactly zero SNR
+    variance_term = (alpha ** 2 / xr.ufuncs.maximum(w1, epsilon)) + \
+                    (beta ** 2 / xr.ufuncs.maximum(w2, epsilon))
 
     # Calculate weight = 1 / variance
     weight = xr.where(variance_term > 0, 1.0 / variance_term, np.nan)
@@ -190,7 +199,8 @@ def ionospheric_correction(
                          xr.ufuncs.isnan(s1) | xr.ufuncs.isnan(s5))
 
     # Create a mask for valid calculated weights (finite and positive)
-    valid_weight_mask = xr.ufuncs.isfinite(weight) & (weight > 0) & xr.ufuncs.isfinite(variance_term) & (variance_term > 0)
+    valid_weight_mask = xr.ufuncs.isfinite(weight) & (weight > 0) & xr.ufuncs.isfinite(variance_term) & (
+                variance_term > 0)
 
     # Also ensure the iono_free calculation itself is finite
     valid_iono_mask = xr.ufuncs.isfinite(iono_free)

@@ -18,7 +18,7 @@ from typing import Tuple, List, Any, Union
 
 import numpy as np
 
-from geonss.constants import *
+from geonss.constants import EARTH_SEMI_MAJOR_AXIS, EARTH_SEMI_MINOR_AXIS, EARTH_ECCENTRICITY_SQUARED
 
 
 class ECEFPosition:
@@ -28,10 +28,10 @@ class ECEFPosition:
     """
 
     def __init__(self,
-        x: Union[float, np.floating] = 0,
-        y: Union[float, np.floating] = 0,
-        z: Union[float, np.floating] = 0
-    ):
+                 x: Union[float, np.floating] = 0,
+                 y: Union[float, np.floating] = 0,
+                 z: Union[float, np.floating] = 0
+                 ):
         assert np.isfinite(x) and np.isfinite(y) and np.isfinite(z), "ECEF coordinates must be finite numbers"
         self.array = np.array([x, y, z], dtype=np.float64)
 
@@ -41,7 +41,7 @@ class ECEFPosition:
         return np.float64(self.array[0])
 
     @x.setter
-    def x(self, value: Union[float, np.floating]) -> None:
+    def x(self, value: float | np.floating) -> None:
         """Set x position."""
         self.array[0] = np.float64(value)
 
@@ -51,7 +51,7 @@ class ECEFPosition:
         return np.float64(self.array[1])
 
     @y.setter
-    def y(self, value: Union[float, np.floating]) -> None:
+    def y(self, value: float | np.floating) -> None:
         """Set y position."""
         self.array[1] = np.float64(value)
 
@@ -61,12 +61,12 @@ class ECEFPosition:
         return np.float64(self.array[2])
 
     @z.setter
-    def z(self, value: Union[float, np.floating]) -> None:
+    def z(self, value: float | np.floating) -> None:
         """Set z position."""
         self.array[2] = (np.float64(value))
 
     @classmethod
-    def from_tuple(cls, coordinates: Tuple[float, float, float]) -> 'ECEFPosition':
+    def from_tuple(cls, coordinates: (float, float, float)) -> 'ECEFPosition':
         """Create an ECEF position from a tuple (x, y, z)."""
         return cls(*coordinates)
 
@@ -111,40 +111,136 @@ class ECEFPosition:
         return lla.to_ecef()
 
     def to_lla(self) -> 'LLAPosition':
-        """Convert to LLA (Latitude, Longitude, Altitude) position."""
-        # Calculate longitude
-        longitude = np.arctan2(self.y, self.x)
+        """
+        Converts Earth-Centered, Earth-Fixed (ECEF) coordinates (X, Y, Z)
+        to Geodetic coordinates (Latitude, Longitude, Altitude - LLA)
+        using the Ferrari/Heikkinen solution.
 
-        # Calculate distance from Z axis
-        p = np.sqrt(self.x ** 2 + self.y ** 2)
+        https://en.wikipedia.org/wiki/Geographic_coordinate_conversion#Ferrari's_solution
 
-        # Handle special case when point is on or near Z-axis
-        if p < 1e-10:  # Nearly zero
-            latitude = np.pi / 2 if self.z > 0 else - np.pi / 2  # North or South Pole
-            altitude = np.abs(self.z) - EARTH_SEMI_MAJOR_AXIS
-            return LLAPosition(np.degrees(latitude), np.degrees(longitude), altitude)
+        Args:
+            x (float): ECEF X-coordinate in meters.
+            y (float): ECEF Y-coordinate in meters.
+            z (float): ECEF Z-coordinate in meters.
 
-        # Initial latitude guess
-        latitude = np.arctan2(self.z, p * (1 - EARTH_ECCENTRICITY_SQUARED))
+        Returns:
+            tuple: A tuple containing:
+                - latitude_deg (float): Latitude in degrees.
+                - longitude_deg (float): Longitude in degrees.
+                - altitude_m (float): Altitude in meters above the ellipsoid.
+        """
+        # Derived geodetic parameters
+        equatorial_radius_sq = EARTH_SEMI_MAJOR_AXIS ** 2
+        polar_radius_sq = EARTH_SEMI_MINOR_AXIS ** 2
 
-        # Iterative latitude calculation
-        for _ in range(5):
-            n = EARTH_SEMI_MAJOR_AXIS / np.sqrt(1 - EARTH_ECCENTRICITY_SQUARED * np.sin(latitude) ** 2)
-            h = p / np.cos(latitude) - n
+        # e_sq is the square of the first eccentricity (e squared)
+        first_eccentricity_sq = (equatorial_radius_sq - polar_radius_sq) / equatorial_radius_sq
 
-            # Add small constant to prevent division by zero
-            denominator = p * (1 - EARTH_ECCENTRICITY_SQUARED * n / (n + h + 1e-10))
-            latitude = np.arctan2(self.z, denominator)
+        # e_prime_sq is the square of the second eccentricity (e' squared in the image)
+        second_eccentricity_sq = (equatorial_radius_sq - polar_radius_sq) / polar_radius_sq
 
-        # Calculate final height
-        n = EARTH_SEMI_MAJOR_AXIS / np.sqrt(1 - EARTH_ECCENTRICITY_SQUARED * np.sin(latitude) ** 2)
-        altitude = p / np.cos(latitude) - n
+        # e_fourth is e_sq squared (e to the power of 4)
+        first_eccentricity_fourth = first_eccentricity_sq ** 2
 
-        # Convert to degrees
-        latitude_deg = np.degrees(latitude)
-        longitude_deg = np.degrees(longitude)
+        # Calculate p = sqrt(X_squared + Y_squared)
+        p_dist = np.linalg.norm([self.x, self.y])
 
-        return LLAPosition(latitude_deg, longitude_deg, altitude)
+        # Calculate longitude (lambda)
+        # Longitude is calculated using atan2(Y, X)
+        longitude_rad = np.arctan2(self.y, self.x)
+
+        # Handle cases where the point is on the Z-axis (p_dist = 0)
+        if p_dist == 0.0:
+            # Latitude is +/- 90 degrees depending on the sign of Z
+            latitude_rad = np.pi / 2.0 * np.copysign(1.0, self.z) if self.z != 0.0 else 0.0
+            # Altitude is the absolute Z value minus the polar radius
+            altitude_m = np.abs(self.z) - EARTH_SEMI_MINOR_AXIS
+            if self.z == 0.0:  # Point is at the Earth's center
+                altitude_m = -EARTH_SEMI_MINOR_AXIS  # Altitude is negative polar radius
+            return LLAPosition(np.degrees(latitude_rad), np.degrees(longitude_rad), altitude_m)
+
+        z_ecef_sq = self.z ** 2
+
+        # Intermediate calculations based on the Ferrari/Heikkinen formulas:
+
+        # F = 54 * b_squared * Z_squared
+        f_term = 54.0 * polar_radius_sq * z_ecef_sq
+
+        # G = p_squared + (1 - e_sq) * Z_squared - e_sq * (a_sq - b_sq)
+        # Note: (a_sq - b_sq) = e_sq * a_sq
+        g_term = p_dist ** 2 + (1.0 - first_eccentricity_sq) * z_ecef_sq - \
+                 first_eccentricity_sq * (equatorial_radius_sq - polar_radius_sq)
+
+        # c = (e_fourth * F * p_squared) / G_cubed
+        if g_term == 0.0:
+            # This indicates a singularity or a case not handled by the direct formulas.
+            # Division by zero would occur.
+            pass
+        c_term = (first_eccentricity_fourth * f_term * p_dist ** 2) / (g_term ** 3)
+
+        # s = cuberoot(1 + c + sqrt(c_squared + 2*c))
+        # Argument for the square root: c_squared + 2*c
+        s_sqrt_arg = c_term ** 2 + 2.0 * c_term
+        # If s_sqrt_arg is negative, np.sqrt will result in NaN or raise an error for scalars.
+
+        s_cbrt_arg = 1.0 + c_term + np.sqrt(s_sqrt_arg)
+        s_term = np.cbrt(s_cbrt_arg)
+
+        # k = s + 1 + 1/s
+        if s_term == 0.0:
+            # Division by zero would occur.
+            pass
+        k_term = s_term + 1.0 + 1.0 / s_term
+
+        # P_formula = F / (3 * k_squared * G_squared) (using P_formula to avoid clash with p_dist)
+        p_formula_term = f_term / (3.0 * k_term ** 2 * g_term ** 2)
+
+        # Q = sqrt(1 + 2 * e_fourth * P_formula)
+        q_sqrt_arg = 1.0 + 2.0 * first_eccentricity_fourth * p_formula_term
+        q_term = np.sqrt(q_sqrt_arg)
+
+        # Denominators for r0 calculation terms
+        q_plus_1 = 1.0 + q_term
+        if q_term == 0.0 or q_plus_1 == 0.0:
+            # Division by zero would occur in r0 calculation.
+            pass
+
+        # r0 = [-P_formula*e_sq*p / (1+Q)] + sqrt{[a_sq/2 * (1 + 1/Q)] - [P_formula*(1-e_sq)*Z_sq / (Q*(1+Q))] - [P_formula*p_sq/2]}
+        r0_term1 = (-p_formula_term * first_eccentricity_sq * p_dist) / q_plus_1
+
+        r0_sqrt_subterm1 = (equatorial_radius_sq / 2.0) * (1.0 + 1.0 / q_term) if q_term != 0.0 else np.inf
+        r0_sqrt_subterm2 = (p_formula_term * (1.0 - first_eccentricity_sq) * z_ecef_sq) / (q_term * q_plus_1) \
+            if (q_term != 0.0 and q_plus_1 != 0.0) else np.inf
+        r0_sqrt_subterm3 = (p_formula_term * p_dist ** 2) / 2.0
+
+        r0_sqrt_arg = r0_sqrt_subterm1 - r0_sqrt_subterm2 - r0_sqrt_subterm3
+        r0_parameter = r0_term1 + np.sqrt(r0_sqrt_arg)
+
+        # U = sqrt((p - e_sq*r0)_squared + Z_squared)
+        u_sqrt_arg_term1_sq = (p_dist - first_eccentricity_sq * r0_parameter) ** 2
+        u_term = np.sqrt(u_sqrt_arg_term1_sq + z_ecef_sq)
+
+        # V = sqrt((p - e_sq*r0)_squared + (1-e_sq)*Z_squared)
+        # (p - e_sq*r0)_squared is the same as u_sqrt_arg_term1_sq
+        v_term = np.sqrt(u_sqrt_arg_term1_sq + (1.0 - first_eccentricity_sq) * z_ecef_sq)
+
+        # z0 = (b_sq * Z) / (a * V)
+        if v_term == 0.0:
+            # Division by zero.
+            pass
+        z0_parameter = (polar_radius_sq * self.z) / (EARTH_SEMI_MAJOR_AXIS * v_term) \
+            if v_term != 0.0 else np.inf
+
+        # Altitude (h) = U * (1 - b_sq / (a*V))
+        altitude_m = u_term * (1.0 - (polar_radius_sq / (EARTH_SEMI_MAJOR_AXIS * v_term))) \
+            if v_term != 0.0 else u_term
+
+        # Latitude (phi) = arctan[(Z + e_prime_sq * z0) / p]
+        latitude_numerator = self.z + second_eccentricity_sq * z0_parameter
+        # p_dist is in the denominator, already checked for p_dist = 0 at the start.
+        latitude_rad = np.arctan(latitude_numerator / p_dist)
+
+        return LLAPosition(np.degrees(latitude_rad), np.degrees(longitude_rad), altitude_m)
 
     def to_tuple(self) -> Tuple[np.float64, np.float64, np.float64]:
         """Convert to tuple (x, y, z)."""
@@ -154,7 +250,7 @@ class ECEFPosition:
         """Calculate the distance to another ECEF position in meters."""
         return np.linalg.norm(other.array - self.array)
 
-    def horizontal_and_altitude_distance_to(self, other: 'ECEFPosition') -> Tuple[float, float]:
+    def horizontal_and_altitude_distance_to(self, other: 'ECEFPosition') -> (float, float):
         """
         Calculate horizontal distance and altitude difference between this position and another.
 
@@ -176,7 +272,7 @@ class ECEFPosition:
         # Use the LLA method to calculate distances
         return self_lla.horizontal_and_altitude_distance_to(other_lla)
 
-    def elevation_angle(self, observable: Union['ECEFPosition', np.ndarray]) -> Union[np.float64, np.ndarray]:
+    def elevation_angle(self, observable: 'ECEFPosition' | np.ndarray) -> np.float64 | np.ndarray:
         """
         Calculate elevation angle from this position to one or multiple observables.
 
@@ -208,7 +304,7 @@ class ECEFPosition:
             vector_enu = rotation @ vector_ecef
 
             # Calculate horizontal distance
-            horizontal_distance = np.sqrt(vector_enu[0]**2 + vector_enu[1]**2)
+            horizontal_distance = np.sqrt(vector_enu[0] ** 2 + vector_enu[1] ** 2)
 
             # Calculate elevation angle
             elevation = np.arctan2(vector_enu[2], horizontal_distance)
@@ -221,7 +317,7 @@ class ECEFPosition:
             vectors_enu = np.dot(vectors_ecef, rotation.T)  # shape (n, 3)
 
             # Calculate horizontal distance for each vector
-            horizontal_distances = np.sqrt(vectors_enu[:, 0]**2 + vectors_enu[:, 1]**2)
+            horizontal_distances = np.sqrt(vectors_enu[:, 0] ** 2 + vectors_enu[:, 1] ** 2)
 
             # Calculate elevation angles
             elevations = np.arctan2(vectors_enu[:, 2], horizontal_distances)
@@ -297,10 +393,10 @@ class LLAPosition:
     """
 
     def __init__(self,
-        latitude: Union[float, np.floating] = 0,
-        longitude: Union[float, np.floating] = 0,
-        altitude: Union[float, np.floating] = 0
-    ):
+                 latitude: Union[float, np.floating] = 0,
+                 longitude: Union[float, np.floating] = 0,
+                 altitude: Union[float, np.floating] = 0
+                 ):
         assert -90 <= latitude <= 90, f"Latitude must be between -90 and 90 degrees, got {latitude}"
         assert -180 <= longitude <= 180, f"Longitude must be between -180 and 180 degrees, got {longitude}"
         assert np.isfinite(altitude), f"Altitude must be a finite number, got {altitude}"
@@ -321,8 +417,23 @@ class LLAPosition:
         """Get altitude as a numpy float64."""
         return np.float64(self.array[2])
 
+    @property
+    def lat(self):
+        """Get latitude as a numpy float64."""
+        return self.latitude
+
+    @property
+    def lon(self):
+        """Get longitude as a numpy float64."""
+        return self.longitude
+
+    @property
+    def alt(self):
+        """Get altitude as a numpy float64."""
+        return self.altitude
+
     @classmethod
-    def from_tuple(cls, coordinates: Tuple[float, float, float]) -> 'LLAPosition':
+    def from_tuple(cls, coordinates: (float, float, float)) -> 'LLAPosition':
         """Create an LLA position from a tuple (latitude, longitude, altitude)."""
         return cls(*coordinates)
 
@@ -352,11 +463,11 @@ class LLAPosition:
 
         return ECEFPosition(x, y, z)
 
-    def to_tuple(self) -> Tuple[np.float64, np.float64, np.float64]:
+    def to_tuple(self) -> (np.float64, np.float64, np.float64):
         """Convert to tuple (latitude, longitude, altitude)."""
         return self.latitude, self.longitude, self.altitude
 
-    def horizontal_and_altitude_distance_to(self, other: 'LLAPosition') -> Tuple[np.float64, np.float64]:
+    def horizontal_and_altitude_distance_to(self, other: 'LLAPosition') -> (np.float64, np.float64):
         """
         Calculate horizontal distance and altitude difference between this position and another.
 

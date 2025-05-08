@@ -13,14 +13,15 @@ The module implements standard GNSS positioning techniques including ionosphere-
 signal weighting based on SNR, and observable position interpolation to handle transmission time effects.
 """
 import logging
+import os
 
 import numpy as np
 
-from geonss.constellation import *
-from geonss.coordinates import *
-from geonss.rinexmanager.util import *
-from geonss.single_point_position import *
+from geonss.constellation import select_constellations
+from geonss.coordinates import ECEFPosition
+from geonss.parsing import load_cached, load_cached_antex
 from geonss.plotting import plot_positions_in_latlon, plot_positions_in_ecef, plot_altitude_differences
+from geonss.single_point_position import single_point_position
 
 logger = logging.getLogger(__name__)
 
@@ -67,23 +68,28 @@ def main():
     # observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/GEOP085R.25o"))
     # navigation = load_cached_navigation_message(datetime(2025, 3, 26), "WTZR00DEU")
 
-    observation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx"), use={'G', 'E'})
-    navigation = load_cached_rinex(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_MN.rnx"))
+    observation = load_cached(os.path.join(project_root, "code/tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx"))
+    navigation = load_cached(os.path.join(project_root, "code/tests/data/BRDC00IGS_R_20250980000_01D_MN.rnx"))
+    sp3 = load_cached(os.path.join(project_root, "code/tests/data/COD0OPSRAP_20250980000_01D_05M_ORB.SP3"))
+    antex = load_cached_antex(os.path.join(project_root, "code/tests/data/igs20.atx"))
 
-    navigation = select_constellations(navigation, galileo=True)
+    navigation = select_constellations(navigation, gps=False, galileo=True)
+    sp3 = select_constellations(sp3, gps=False, galileo=True)
 
     # Only use a subset of the data for testing
+    # observation = observation.isel(time=slice(40, -40))
     observation = observation.isel(time=np.sort(np.random.choice(len(observation.time), size=50, replace=False)))
-    # observation = observation.isel(time=slice(5, 31))
+    # observation = observation.isel(time=slice(40, 140))
+    # observation = observation.isel(time=slice(130, 140))
 
     # Compute positions
-    position_results = single_point_position(observation, navigation)
+    position_results = single_point_position(observation, navigation=navigation, sp3=sp3, antex=antex)
+    # position_results = single_point_position(observation, navigation=navigation)
 
     # Get true position from observation data
-    true_position = ECEFPosition.from_array(observation.position)
+    true_position = ECEFPosition.wrap_array(observation.position)
 
-    # Extract results
-    computed_positions = [pos for _, pos, _ in position_results]
+    computed_positions = [ECEFPosition.wrap_array(pos) for pos in position_results.position.values]
 
     # Analyze the results
     analyze_and_print_positions(computed_positions, true_position)

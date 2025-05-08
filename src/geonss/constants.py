@@ -12,7 +12,7 @@ OMEGA_E = np.float64(7.2921151467e-5)  # rad/s
 EARTH_SEMI_MAJOR_AXIS = np.float64(6378137.0)  # m
 
 # WGS-84 Earth semi-minor axis
-EARTH_SEMI_MINOR_AXIS = np.float64(6356752.314245) # m
+EARTH_SEMI_MINOR_AXIS = np.float64(6356752.314245)  # m
 
 # WGS-84 Earth flattening
 EARTH_FLATTENING = np.float64(1 / 298.257223563)

@@ -1,7 +1,9 @@
-import matplotlib.pyplot as plt
 import os
-from geonss.coordinates import LLAPosition
 from typing import List
+
+import matplotlib.pyplot as plt
+
+from geonss.coordinates import LLAPosition
 
 
 def create_latlon_plot(lat_min, lat_max, lon_min, lon_max):
@@ -68,6 +70,7 @@ def save_latlon_plot(fig, filename='gnss_positions.svg'):
     plt.savefig(filename, format='svg', bbox_inches='tight')
     plt.close(fig)
     return os.path.abspath(filename)
+
 
 def plot_positions_in_latlon(
         true_position: LLAPosition,

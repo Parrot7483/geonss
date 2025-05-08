@@ -4,12 +4,13 @@ Numerical algorithms for GNSS processing.
 This module provides general mathematical algorithms used across the GNSS processing pipeline
 """
 
-import numpy as np
-from typing import Optional, Callable, Tuple
 import logging
+from typing import Optional, Callable, Tuple
 
+import numpy as np
 
 logger = logging.getLogger(__name__)
+
 
 def weighted_least_squares(
         geometry_matrix: np.ndarray,
@@ -163,7 +164,7 @@ def iterative_reweighted_least_squares(
         geometry_matrix, current_residuals, current_apriori_weights = model_fn(state, **kwargs)
 
         # 2. Calculate final weights for this iteration's WLS
-        weights = current_apriori_weights.copy() # Start with a priori weights
+        weights = current_apriori_weights.copy()  # Start with a priori weights
 
         if iteration > 0 and previous_residuals is not None and previous_apriori_weights is not None:
             # Check for dimension mismatch
@@ -175,8 +176,9 @@ def iterative_reweighted_least_squares(
 
                 # Standardize PREVIOUS residuals using PREVIOUS sigma
                 standardized_residuals = np.zeros_like(previous_residuals)
-                valid_sigma_mask = sigma < (1.0 / sigma_epsilon) # Avoid infinite or near-zero sigma
-                standardized_residuals[valid_sigma_mask] = previous_residuals[valid_sigma_mask] / sigma[valid_sigma_mask]
+                valid_sigma_mask = sigma < (1.0 / sigma_epsilon)  # Avoid infinite or near-zero sigma
+                standardized_residuals[valid_sigma_mask] = previous_residuals[valid_sigma_mask] / sigma[
+                    valid_sigma_mask]
 
                 # Calculate robust weight factor using loss_fn
                 try:
@@ -184,8 +186,9 @@ def iterative_reweighted_least_squares(
                     robust_weights_factor[~np.isfinite(robust_weights_factor)] = 0.0
                     robust_weights_factor = np.maximum(robust_weights_factor, 0.0)
                 except Exception as e:
-                    logger.warning(f"Error in loss_fn during iteration {iteration + 1}: {e}. Using a priori weights.", exc_info=True)
-                    robust_weights_factor = np.ones_like(standardized_residuals) # Fallback
+                    logger.warning(f"Error in loss_fn during iteration {iteration + 1}: {e}. Using a priori weights.",
+                                   exc_info=True)
+                    robust_weights_factor = np.ones_like(standardized_residuals)  # Fallback
 
                 # Apply robust factor to CURRENT a priori weights
                 weights *= robust_weights_factor
@@ -259,7 +262,7 @@ def huber_weight(standardized_residuals: np.ndarray, k: float = 1.345) -> np.nda
     large_res_mask = abs_std_res > k
     if k > 0:
         weights[large_res_mask] = k / abs_std_res[large_res_mask]
-    else: # k == 0
+    else:  # k == 0
         weights[abs_std_res > 1e-15] = 0.0
     weights[~np.isfinite(standardized_residuals)] = 0.0
     return weights
