@@ -3,7 +3,6 @@ import xarray as xr
 import pandas as pd
 import numpy as np
 from midgard import parsers
-from datetime import datetime
 import logging
 
 
@@ -171,62 +170,6 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
     ds['sat_type'].attrs.update({"long_name": "Satellite Type"})
 
     return ds
-
-# TODO: Generalize this function to handle multiple satellites and frequencies
-def get_pco_correction(
-    ds: xr.Dataset,
-    satellite: str,
-    frequency: str,
-    time: datetime | np.datetime64,
-    check_valid_until: bool = True
-) -> np.ndarray | None:
-    """Get phase center offset for a satellite and frequency at a given time
-
-    Args:
-        ds: xarray Dataset with PCO data
-        satellite: Satellite ID (e.g., 'E01')
-        frequency: Frequency name (e.g., 'E05' for E5a)
-        time: Timestamp for the observation (datetime or numpy.datetime64)
-        check_valid_until: If True, ensures time is before valid_until (default: True)
-
-    Returns:
-        numpy.ndarray: NEU offsets [north, east, up] in m or None if not found
-    """
-    # Convert time to numpy datetime64
-    if isinstance(time, datetime):
-        time = np.datetime64(time)
-    elif not isinstance(time, np.datetime64):
-        raise TypeError(f"Expected datetime.datetime or numpy.datetime64, got {type(time)}")
-
-    # Get data for this satellite and frequency
-    subset = ds.sel(sv=satellite, frequency=frequency).dropna(dim="valid_from")
-
-    # Find entries where the time falls within the valid period
-    if check_valid_until:
-        valid_until = np.array([np.datetime64(ts) for ts in subset.valid_until.values])
-        mask = (subset.valid_from.values <= time) & (time < valid_until)
-    else:
-        mask = (subset.valid_from.values <= time)
-
-    # Apply mask to find valid entries
-    valid_indices = np.where(mask)[0]
-
-    if len(valid_indices) == 0:
-        return None
-
-    # Assert that there is only one valid correction for this time
-    assert len(valid_indices) == 1, f"Found {len(valid_indices)} PCO corrections for {satellite}, {frequency} at {time}. Expected exactly one."
-
-    # Get the matching entry (simplified as we expect only one)
-    idx = valid_indices[0]
-
-    offset = subset.isel(valid_from=idx)
-
-    return np.array([
-        offset.north.values,
-        offset.east.values,
-        offset.up.values
-    ])
 
 
 def load_cached_antex(antex_path: str) -> xr.Dataset:
