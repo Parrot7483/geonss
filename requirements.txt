@@ -1,14 +1,18 @@
 # Switch bag to upstream georinex when PR is merged
 # georinex @ git+https://github.com/geospace-code/georinex@main
-georinex @ git+https://github.com/Parrot7483/georinex@develop
+# georinex @ git+https://github.com/Parrot7483/georinex@develop
 hatanaka @ git+https://github.com/valgur/hatanaka@master
 matplotlib==3.10.1
+multipledispatch
 numpy==2.2.4
 paramiko==3.5.1
-platformdirs==4.3.6
+platformdirs
 scipy==1.15.2
 xarray==2025.1.2
 
 # Development
 autopep8==2.3.2
 pytest==8.3.4
+
+# Local georinex version
+-e ../georinex
