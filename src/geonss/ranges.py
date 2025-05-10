@@ -244,10 +244,31 @@ def calculate_pseudo_ranges(obs_data: xr.Dataset) -> xr.Dataset:
     """
     c1 = obs_data.C1C
     s1 = obs_data.S1C
-    c5 = obs_data.C5Q
-    s5 = obs_data.S5Q
+    # c5 = obs_data.C5Q
+    # s5 = obs_data.S5Q
 
-    ranges, weights = ionospheric_correction(c1, c5, s1, s5)
+    # Choose the measurement for the second frequency. L5Q > C2W > C2L
+    # Create empty array for ranges and weights
+    c2 = xr.full_like(c1, np.nan)
+    s2 = xr.full_like(c1, np.nan)
+    f2 = xr.full_like(c1, np.nan)
+
+    where_c5q = ~np.isnan(obs_data.C5Q) & ~np.isnan(obs_data.S5Q)
+    c2 = xr.where(where_c5q, obs_data.C5Q, c2)
+    s2 = xr.where(where_c5q, obs_data.S5Q, s2)
+    f2 = xr.where(where_c5q, 1176.45, f2)
+
+    where_c2w = ~np.isnan(obs_data.C2W) & ~np.isnan(obs_data.S2W)
+    c2 = xr.where(where_c2w, obs_data.C2W, c2)
+    s2 = xr.where(where_c2w, obs_data.S2W, s2)
+    f2 = xr.where(where_c2w, 1278.75, f2)
+
+    where_c2l = ~np.isnan(obs_data.C2L) & ~np.isnan(obs_data.S2L)
+    c2 = xr.where(where_c2l, obs_data.C2L, c2)
+    s2 = xr.where(where_c2l, obs_data.S2L, s2)
+    f2 = xr.where(where_c2l, 1278.75, f2)
+
+    ranges, weights = ionospheric_correction(c1=c1, c5=c2, s1=s1, s5=s2, f5=f2)
 
     # Create a new dataset to store the results
     result = xr.Dataset(
