@@ -66,6 +66,6 @@ def apply_phase_center_offset(ecef_position: np.ndarray, neu_offset: np.ndarray)
     ecef_offsets = np.einsum('nij,nj->ni', rotation_matrices, satellite_body_offsets)  # Shape (N, 3)
 
     # Subtract ECEF offset from original ECEF position (PCO points from Antenna Phase Center to Center of Mass)
-    corrected_ecef_positions = ecef_position + ecef_offsets
+    corrected_ecef_positions = ecef_position - ecef_offsets
 
     return corrected_ecef_positions

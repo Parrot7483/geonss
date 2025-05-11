@@ -1,1 +1,1 @@
-from .position import *
+from .position import single_point_position

@@ -18,6 +18,9 @@ dependencies = [
     "xarray==2025.1.2",
 ]
 
+[project.scripts]
+geonss = "geonss.main:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = ["geonss"]
