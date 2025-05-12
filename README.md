@@ -1,12 +1,5 @@
 # TODOS
-- [x] Use elevation angle for weighted least squares
-- [x] Add simple tropospheric correction (Niell mapping function)
-- [ ] Multi constellation clock bias needs more unknown parameters to be solved (e.g. 5 unknown for double constellation / ISB or GGT)
-- [x] Clean up pylint
-- [x] Add tests cases for satellite positions
-- [ ] Compute satellite positions in parallel
-- [x] Compute pseudo ranges in parallel
-- [x] Fix georinex library to be able to read navigation messages from IGS
-- [ ] Refactor rinexmanger, create a class for it
-- [ ] Use doppler measurements for weighted least squares and velocity estimation
+- [ ] Correct result positions using receiver phase center offset
+- [ ] Check that receiver clock bias is correct
+- [ ] Write report
 - [ ] Add a `LICENSE` file

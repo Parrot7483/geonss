@@ -1,5 +1,10 @@
+import pandas as pd
 import argparse
 import pathlib
+from geonss.position import spp
+from geonss.parsing import load_cached, load_cached_antex
+from geonss.parsing.write import write_sp3_from_xarray
+from geonss.constellation import select_constellations
 
 def main():
     parser = argparse.ArgumentParser(
@@ -9,7 +14,7 @@ def main():
     )
     # --- Required Arguments ---
     parser.add_argument(
-        "observation-file",
+        "observation",
         type=pathlib.Path,
         help="Path to RINEX observation file. (required path).",
     )
@@ -19,32 +24,38 @@ def main():
         "-i", "--identifier",
         type=str,
         dest="id",
-        default="sat",
-        help="Receiver identifier (default: sat) (optional string).",
+        default="L01",
+        help="Receiver identifier (default: L01) (optional string).",
     )
     parser.add_argument(
-        "-n", "--navigation-file",
+        "-n", "--navigation",
         type=pathlib.Path,
-        dest="navigation_file",
+        dest="navigation",
         help="Path to the navigation file (optional path).",
     )
     parser.add_argument(
-        "-s", "--sp3-file",
+        "-s", "--sp3",
         type=pathlib.Path,
-        dest="sp3_file",
+        dest="sp3",
         help="Path to the SP3 file (optional path).",
     )
     parser.add_argument(
-        "-a", "--antex-file",
+        "-a", "--antex",
         type=pathlib.Path,
-        dest="antex_file",
+        dest="antex",
         help="Path to the ANTEX file (optional path).",
     )
     parser.add_argument(
-        "-o", "--output-file",
+        "-o", "--output",
         type=pathlib.Path,
-        dest="output_file_path",
-        help="Path to the output file (optional path).",
+        dest="output",
+        help="Path to the output file (optional path). Use '-' for standard output.",
+    )
+    parser.add_argument(
+        "-t", "--time-limit",
+        type=str,
+        dest="tlim",
+        help="Time limit for processing (optional string). Format: (YYYY-MM-DDTHH:MM:SS,YYYY-MM-DDTHH:MM:SS)",
     )
 
     # --- Boolean Flags ---
@@ -55,36 +66,47 @@ def main():
         help="Enable verbose output (boolean flag)."
     )
     parser.add_argument(
-        "-t", "--disable-signal-travel-time-correction",
+        "--disable-galileo",
+        action="store_true",
+        dest="disable_galileo",
+        help="Disable Galileo constellation (boolean flag)."
+    )
+    parser.add_argument(
+        "--disable-gps",
+        action="store_true",
+        dest="disable_gps",
+        help="Disable GPS constellation (boolean flag)."
+    )
+    parser.add_argument(
+        "--disable-signal-travel-time-correction",
         action="store_true",
         dest="disable_signal_travel_time_correction",
         help="Disable signal travel time correction (boolean flag)."
     )
     parser.add_argument(
-        "-e", "--disable-earth-rotation-correction",
+        "--disable-earth-rotation-correction",
         action="store_true",
         dest="disable_earth_rotation_correction",
         help="Disable Earth rotation correction (boolean flag)."
     )
     parser.add_argument(
-        "-p", "--disable-tropospheric-correction",
+        "--disable-tropospheric-correction",
         action="store_true",
         dest="disable_tropospheric_correction",
         help="Disable tropospheric correction (boolean flag)."
     )
     parser.add_argument(
-        "-w", "--disable-elevation-weighting",
+        "--disable-elevation-weighting",
         action="store_true",
         dest="disable_elevation_weighting",
         help="Disable elevation-based weighting (boolean flag)."
     )
     parser.add_argument(
-        "-r", "--disable-snr-weighting",
+        "--disable-snr-weighting",
         action="store_true",
         dest="disable_snr_weighting",
         help="Disable SNR-based weighting (boolean flag)."
     )
-
 
     try:
         args = parser.parse_args()
@@ -93,19 +115,81 @@ def main():
         parser.print_help()
         return
 
-    if not args.sp3_file and not args.navigation_file:
-        print("Error: You must provide either a navigation file or an SP3 file.")
+    if not args.navigation and not (args.sp3 and args.antex):
+        print("Error: You must provide either a navigation file or an SP3 + ANTEX file.")
 
-    if args.sp3_file and not args.antex_file:
-        print("Warning: You provided an SP3 orbit file but no ANTEX file. Phase center offsets will not be applied.")
+    if args.tlim:
+        try:
+            time_limit = args.tlim.strip("()").split(",")
 
-    if not args.output_file_path:
-        print("Warning: No output file path provided. Defaulting to STDOUT.")
+            if len(time_limit) != 2:
+                raise ValueError("Invalid time limit format. Use (YYYY-MM-DDTHH:MM:SS,YYYY-MM-DDTHH:MM:SS)")
 
-    if args.verbose:
-        print("Verbose mode is ON. More details will be printed.")
+            start_str, end_str = time_limit
 
-    print("Program finished.")
+            start = pd.to_datetime(start_str)
+            end = pd.to_datetime(end_str)
+        except ValueError:
+            print("Error: Invalid time limit format. Use (YYYY-MM-DDTHH:MM:SS,YYYY-MM-DDTHH:MM:SS)")
+            return
+
+    try:
+        # Load the observation data
+        if args.tlim:
+            observation = load_cached(args.observation, tlim=(start, end), use=["G", "E"])
+        else:
+            observation = load_cached(args.observation, use=["G", "E"])
+
+        # Load the navigation data
+        if args.navigation and args.tlim:
+            navigation = load_cached(args.navigation, tlim=(start, end), use=["G", "E"])
+        elif args.navigation:
+            navigation = load_cached(args.navigation, use=["G", "E"])
+        else:
+            navigation = None
+
+        # Load the SP3 data
+        if args.sp3 and args.tlim:
+            sp3_data = load_cached(args.sp3, tlim=(start, end), use=["G", "E"])
+        elif args.sp3:
+            sp3_data = load_cached(args.sp3, use=["G", "E"])
+        else:
+            sp3_data = None
+
+        # Load the ANTEX data
+        if args.antex:
+            antex_data = load_cached_antex(args.antex)
+        else:
+            antex_data = None
+
+        observation = select_constellations(observation, galileo=(not args.disable_galileo), gps=(not args.disable_gps))
+        navigation = select_constellations(navigation, galileo=(not args.disable_galileo), gps=(not args.disable_gps))
+
+        result = spp(
+            observation,
+            navigation=navigation,
+            sp3=sp3_data,
+            antex=antex_data,
+            enable_signal_travel_time_correction = not args.disable_signal_travel_time_correction,
+            enable_earth_rotation_correction= not args.disable_earth_rotation_correction,
+            enable_tropospheric_correction = not args.disable_tropospheric_correction,
+            enable_elevation_weighting = not args.disable_elevation_weighting,
+            enable_snr_weighting = not args.disable_snr_weighting
+        )
+
+        # Add the satellite ID as a coordinate to the result
+        result = result.assign_coords(satellite_id=args.id)
+
+        write_sp3_from_xarray(
+            result,
+            args.output,
+            satellite_id=args.id
+        )
+
+    except KeyboardInterrupt:
+        print("Process interrupted by user.")
+        return
+
 
 if __name__ == "__main__":
     main()

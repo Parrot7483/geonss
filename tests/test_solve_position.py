@@ -1,7 +1,7 @@
 from geonss.parsing import load_cached
 from geonss.coordinates import ECEFPosition
 from geonss.constellation import select_constellations
-from geonss import single_point_position
+from geonss import spp
 from tests.util import path_test_file
 
 import numpy as np
@@ -19,7 +19,7 @@ def test_solve_position_solution_1():
     navigation = select_constellations(navigation, galileo=True)
 
     # Compute positions
-    result = single_point_position(observation, navigation)
+    result = spp(observation, navigation)
 
     # Extract results
     computed_positions = [ECEFPosition.from_array(pos) for pos in result.position.values * 1000.0]

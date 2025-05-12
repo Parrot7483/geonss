@@ -1,39 +1,51 @@
 import xarray as xr
 import pandas as pd
 
-def write_sp3_from_xarray(dataset: xr.Dataset, output_filepath: str, satellite_id: str = "G01"):
+def write_sp3_from_xarray(dataset: xr.Dataset, output_filepath: str, satellite_id: str = "UNK"):
     """
-    Writes an xarray Dataset to an SP3 format text file.
-
-    Args:
-        dataset (xr.Dataset): The input xarray Dataset.
-                              It must contain 'time', 'position' (with ECEF coordinates),
-                              and 'clock_bias' data variables.
-        output_filepath (str): The path to the output SP3 file.
-        satellite_id (str): The satellite ID to use in the SP3 file (e.g., "G01", "E12").
+    Writes an xarray Dataset to an SP3 format text file compatible with georinex parser.
     """
+    import sys
 
-    with open(output_filepath, 'w') as f:
-        # --- Write SP3 Header (Simplified Example) ---
-        f.write("#c SP3-c File: Created using geonss python library\n") # Version and type
-        # A more complete header would include start epoch, number of epochs, coordinate system, etc.
-        # For simplicity, we'll use a basic start time from the dataset.
+    # Ensure satellite_id is exactly 3 characters (required by SP3 format)
+    if len(satellite_id) > 3:
+        satellite_id = satellite_id[:3]
+    elif len(satellite_id) < 3:
+        satellite_id = satellite_id.ljust(3)
+
+    # Determine if we're writing to a file or stdout
+    is_stdout = output_filepath is None or output_filepath in ["-", ""]
+
+    # Open file if needed, otherwise use stdout
+    with (sys.stdout if is_stdout else open(output_filepath, 'w')) as f:
+        # Get start time and number of epochs
         start_time = pd.to_datetime(dataset['time'].values[0])
         num_epochs = len(dataset['time'])
 
-        f.write(f"#c {start_time.year:04d} {start_time.month:02d} {start_time.day:02d} {start_time.hour:02d} "
-                f"{start_time.minute:02d} {start_time.second + start_time.microsecond/1e6:011.8f} "
-                f"GPS {num_epochs:4d} {' '*27}\n") # Simplified time line
+        # Write version line with proper time format
+        microsec = start_time.microsecond / 1e6
+        f.write(f"#cP{start_time.year:4d} {start_time.month:2d} {start_time.day:2d} "
+                f"{start_time.hour:2d} {start_time.minute:2d} {start_time.second + microsec:11.8f}  "
+                f"{num_epochs:5d} ITRF SP3 GEONSS     GPS 0  0 0\n")
 
-        f.write("+ NSAT\n") # Number of satellites line
-        f.write(f"  1 {satellite_id}\n") # Assuming only one satellite as per the dataset structure for now
+        # Empty line that georinex expects to skip
+        f.write("\n")
 
-        f.write("#c GNSS single point positioning solution\n")
-        f.write("#c Iterative Reweighted Least Squares (IRLS)\n")
+        # Write the + line with number of satellites (1) at positions 3-6
+        f.write(f"+   1  {satellite_id}  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0\n")
 
-        f.write("##\n") # End of header marker
+        # Standard format SP3 header comment lines
+        f.write("++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0\n")
+        f.write("%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc\n")
+        f.write("%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc\n")
+        f.write("%f  1.2500000  1.025000000  0.00000000000  0.000000000000000\n")
+        f.write("%i    0    0    0    0      0      0      0      0         0\n")
+        f.write("%i    0    0    0    0      0      0      0      0         0\n")
+        f.write("/* GNSS single point positioning solution\n")
+        f.write("/* Iterative Reweighted Least Squares (IRLS)\n")
+        f.write("/*\n")  # End of header marker
 
-        # --- Write Data Records ---
+        # Write Data Records
         for i in range(num_epochs):
             epoch_time = pd.to_datetime(dataset['time'].values[i])
             year = epoch_time.year
@@ -44,24 +56,17 @@ def write_sp3_from_xarray(dataset: xr.Dataset, output_filepath: str, satellite_i
             second_float = epoch_time.second + epoch_time.microsecond / 1e6
 
             # Write epoch header line
-            f.write(f"* {year:4d} {month:2d} {day:2d} {hour:2d} {minute:2d} {second_float:11.8f}\n")
+            f.write(f"*  {year:4d} {month:2d} {day:2d} {hour:2d} {minute:2d} {second_float:11.8f}\n")
 
-            # Position data (assuming ECEF coordinates are x, y, z in order)
-            # The dataset shows ECEF as a coordinate with values 'x', 'y', 'z'
-            # We need to extract them based on this structure.
-            pos_x = dataset['position'].sel(ECEF='x').isel(time=i).item()
-            pos_y = dataset['position'].sel(ECEF='y').isel(time=i).item()
-            pos_z = dataset['position'].sel(ECEF='z').isel(time=i).item()
+            # Position data - extract position array at time i first
+            pos = dataset['position'].isel(time=i)
+            pos_x, pos_y, pos_z = pos.sel(ECEF="x").item(), pos.sel(ECEF="y").item(), pos.sel(ECEF="z").item()
+            vel = dataset['velocity'].isel(time=i)
+            vel_x, vel_y, vel_z = vel.sel(ECEF="x").item(), vel.sel(ECEF="y").item(), vel.sel(ECEF="z").item()
+            clk_bias = dataset['clock'].isel(time=i).item()
 
-            # Clock bias data
-            clk_bias = dataset['clock_bias'].isel(time=i).item()
+            # Write satellite data with exact SP3 format spacing
+            f.write(f"P{satellite_id}{pos_x:14.6f}{pos_y:14.6f}{pos_z:14.6f}{clk_bias:14.6f}\n")
+            f.write(f"V{satellite_id}{vel_x:14.6f}{vel_y:14.6f}{vel_z:14.6f}{0.000000:14.6f}\n")
 
-            # Write satellite data line
-            # Format: P<SAT_ID> <X_POS> <Y_POS> <Z_POS> <CLOCK_BIAS> [X_VEL Y_VEL Z_VEL CLOCK_RATE_CHANGE] [ACC_FLAGS]
-            # Velocities, clock rate change, and accuracy flags are optional and not in the provided dataset.
-            f.write(f"P{satellite_id:<3s}{pos_x:14.6f}{pos_y:14.6f}{pos_z:14.6f}{clk_bias:14.6f}\n")
-            # If you had more satellites, you would loop through them here for the same epoch.
-
-        f.write("EOF\n") # End of file marker
-
-    print(f"SP3 file '{output_filepath}' written successfully.")
+        f.write("EOF\n")  # End of file marker

@@ -161,7 +161,7 @@ def build_positioning_model(
     return geometry_matrix, residuals, weights
 
 
-def single_point_position(
+def spp(
         observation: xr.Dataset,
         navigation: xr.Dataset | None = None,
         sp3: xr.Dataset | None = None,
@@ -290,19 +290,25 @@ def single_point_position(
     # Convert positions from meter to km
     positions /= 1000.0
 
+    # I want to add the sv dimension to the positions and clock_biases
+    # It is a single sv, so we can just add a dimension of size 1
+    # positions = positions[:, np.newaxis, :]
+    # clock_biases = clock_biases[:, np.newaxis]
+
     # Create output xarray Dataset
-    result = xr.Dataset(
+    positions_ds = xr.Dataset(
         data_vars={
-            "position": (["time", "ECEF"], positions, {
+            "position": (["time", "sv", "ECEF"], positions[:, np.newaxis, :], {
                 "units": "km",
                 "long_name": "ECEF coordinates",
             }),
-            "clock_bias": (["time"], clock_biases, {
+            "clock": (["time", "sv"], clock_biases[:, np.newaxis], {
                 "units": "microseconds",
                 "long_name": "Receiver clock bias",
             })
         },
         coords={
+            "sv": ["UNK"],
             "time": times,
             "ECEF": ["x", "y", "z"]
         },
@@ -314,4 +320,11 @@ def single_point_position(
         }
     )
 
-    return result
+    # Interpolate the velocity
+    result_ds = interpolate_orbit_positions(
+        positions_ds,
+        positions_ds,
+        8,
+    )
+
+    return result_ds

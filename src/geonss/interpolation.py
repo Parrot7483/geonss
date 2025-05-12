@@ -364,6 +364,21 @@ def interpolate_orbit_positions(
         except ValueError as e:
             raise ValueError(f"Error creating Lagrange polynomial for clock bias for SV {satellite_id}: {e}")
 
+        # Convert back to km
+        interpolated_position = np.stack([
+            interpolated_x_m,
+            interpolated_y_m,
+            interpolated_z_m],
+            axis=-1
+        ) / 1000.0
+
+        interpolated_velocity = np.stack([
+            interpolated_vx_m_per_s,
+            interpolated_vy_m_per_s,
+            interpolated_vz_m_per_s],
+            axis=-1
+        ) / 1000.0
+
         return xr.Dataset(
             coords={
                 'time': sv_time_group.time.values,
@@ -371,7 +386,7 @@ def interpolate_orbit_positions(
             },
             data_vars={
                 'position': xr.DataArray(
-                    data=np.stack([interpolated_x_m, interpolated_y_m, interpolated_z_m], axis=-1),
+                    data=interpolated_position,
                     dims=('time', 'ECEF'),
                     coords={
                         'time': sv_time_group.time.values,
@@ -379,7 +394,7 @@ def interpolate_orbit_positions(
                     },
                 ),
                 'velocity': xr.DataArray(
-                    data=np.stack([interpolated_vx_m_per_s, interpolated_vy_m_per_s, interpolated_vz_m_per_s], axis=-1),
+                    data=interpolated_velocity,
                     dims=('time', 'ECEF'),
                     coords={
                         'time': sv_time_group.time.values,
@@ -399,7 +414,7 @@ def interpolate_orbit_positions(
     # Group the query times by satellite vehicle ID and time bin
     grouped_result = query_times.groupby(
         sv=xr.groupers.UniqueGrouper(),
-        time=xr.groupers.BinGrouper(bins=sp3_full_data.time.values),
+        time=xr.groupers.BinGrouper(bins=sp3_full_data.time.values, include_lowest=True),
     ).map(_interpolate_group)
 
     # Collapse the time_bins dimension
@@ -408,7 +423,6 @@ def interpolate_orbit_positions(
     # Add attributes
     annotated_result = reduced_result.assign_attrs({
         'interpolation_method': f'Lagrange polynomial (window size: {window})',
-        'source': 'SP3 precise orbit data and query times',
     })
 
     annotated_result['position'] = reduced_result.position.assign_attrs({
