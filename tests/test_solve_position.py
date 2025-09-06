@@ -25,7 +25,7 @@ def test_solve_position_solution_1():
     computed_positions = [ECEFPosition.from_array(pos[0]) for pos in result.position * 1000.0]
 
     # Get true position from observation data
-    true_position = ECEFPosition.from_array(observation.position)
+    true_position = ECEFPosition.from_array(np.array(observation.position))
 
     # Calculate statistics
     mean_position = ECEFPosition.from_positions_list_mean(computed_positions)

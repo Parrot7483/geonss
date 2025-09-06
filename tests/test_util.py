@@ -17,7 +17,7 @@ def test_load_parallel1():
     assert np.all(combined == compare)
 
 def test_load_parallel2():
-    obs = path_test_file("s6an0010.24o")
+    obs = path_test_file("s6an0010.24o.gz")
     start = datetime.fromisoformat("2024-01-01T03:28:00")
     end = datetime.fromisoformat("2024-01-01T03:30:00")
 

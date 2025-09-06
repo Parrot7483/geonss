@@ -39,6 +39,7 @@ packages = ["geonss"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v"
+pythonpath = [".", "src"]
 
 [tool.pylint]
 max-line-length = 120
