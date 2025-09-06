@@ -1,10 +1,9 @@
-import os
 import numpy as np
 from geonss.parsing import load_parallel
 from georinex import load
 from datetime import datetime
 import logging
-from util import path_test_file
+from tests.util import path_test_file
 
 logging.basicConfig(level=logging.DEBUG)
 
