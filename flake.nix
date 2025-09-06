@@ -2,7 +2,7 @@
   description = "A GNSS implementation in Python";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     pyproject = {
       url = "path:./pyproject.toml"; # Track pyproject.toml as an input
       flake = false;
