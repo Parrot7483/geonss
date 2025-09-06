@@ -204,7 +204,7 @@ def satellite_position_velocity_clock_correction(
     _, seconds_of_clock = datetime_gps_to_week_and_seconds(t_oc)
 
     # Relativistic clock correction
-    delta_tr = REL_CONST * np.power(e, sqrt_a) * sin_e
+    delta_tr = REL_CONST * e * sqrt_a * np.sin(e_anom)
 
     # Satellite clock correction in meter
     delta_t_oc = gps_seconds - seconds_of_clock
