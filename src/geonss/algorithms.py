@@ -78,45 +78,6 @@ def weighted_least_squares(
     return solution
 
 
-def iterative_least_squares(
-        initial_state: np.ndarray,
-        model_fn: Callable[..., Tuple[np.ndarray, np.ndarray, np.ndarray]],
-        iterations: int = 10,
-        **kwargs
-) -> np.ndarray:
-    """
-    General Minimal Iterative Least Squares (ILS) solver.
-
-    Args:
-        initial_state: Initial parameter vector
-        model_fn: Function to build geometry matrix and residuals
-        iterations: Number of iterations
-        **kwargs: Additional keyword arguments passed to model_fn
-
-    Returns:
-        Final parameter vector
-    """
-    # Initialize state
-    state = initial_state.copy()
-
-    # Iterative least squares solution
-    for iteration in range(iterations):
-        # Build model for current state
-        geometry_matrix, residuals, _ = model_fn(state, **kwargs)
-
-        # Use the weighted least squares solver without weights
-        state_update = weighted_least_squares(
-            geometry_matrix=geometry_matrix,
-            residuals=residuals,
-            weights=None,
-        )
-
-        # Update state
-        state += state_update
-
-    return state
-
-
 def iterative_reweighted_least_squares(
         initial_state: np.ndarray,
         model_fn: Callable[..., Tuple[np.ndarray, np.ndarray, np.ndarray]],

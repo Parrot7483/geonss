@@ -22,4 +22,4 @@ EARTH_ECCENTRICITY_SQUARED = 2 * EARTH_FLATTENING - EARTH_FLATTENING ** 2  # ecc
 SPEED_OF_LIGHT = np.float64(299792458.0)  # m/s
 
 # Relativity Constant
-REL_CONST = np.float64(-4.44280763e-10)  # sec/sqrt(m)
+REL_CONST = np.float64(-4.442807633e-10)  # sec/sqrt(m)

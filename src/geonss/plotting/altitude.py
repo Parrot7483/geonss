@@ -10,7 +10,7 @@ from geonss.coordinates import LLAPosition
 def plot_altitude_differences(
         true_position: LLAPosition,
         computed_positions: List[LLAPosition],
-        filename: str = 'altitude_differences.svg'
+        filename = 'altitude_differences.svg'
 ) -> str:
     """
     Plot altitude differences between computed positions and true position.
@@ -52,9 +52,9 @@ def plot_altitude_differences(
     # Add statistics
     std_dev = np.std(alt_diffs)
     rms = np.sqrt(np.mean(np.square(alt_diffs)))
-    textstr = f'Mean: {mean_diff:.2f}m\nStd Dev: {std_dev:.2f}m\nRMS: {rms:.2f}m'
+    text = f'Mean: {mean_diff:.2f}m\nStd Dev: {std_dev:.2f}m\nRMS: {rms:.2f}m'
     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-    ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=10, verticalalignment='top', bbox=props)
+    ax.text(0.05, 0.95, text, transform=ax.transAxes, fontsize=10, verticalalignment='top', bbox=props)
 
     # Add legend
     ax.legend()

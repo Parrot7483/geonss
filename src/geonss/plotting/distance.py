@@ -1,6 +1,6 @@
+import os
 import matplotlib.pyplot as plt
 import numpy as np
-
 
 def plot_distance(distance_da, connect_points=False):
     """
@@ -51,3 +51,64 @@ def plot_distance(distance_da, connect_points=False):
     plt.ylabel("Distance (m)")
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.show()
+
+
+def latlon_distance(diff: list, use_arcseconds=False, figsize=(24, 12), filename='latlon_differences.svg'):
+    """
+    Plot coordinate differences in a scatter plot with zero-centered crosshair and save it.
+
+    Args:
+        diff: List of tuples containing (latitude_diff, longitude_diff, altitude_diff)
+        use_arcseconds: If True, convert to arcseconds (default: False)
+        figsize: Figure size as tuple (width, height) (default: (24, 12))
+        filename: Output file name (default: 'latlon_differences.svg')
+
+    Returns:
+        str: Absolute path to the saved file
+    """
+    # Extract dx (longitude) and dy (latitude) components from 'diff'
+    # Swapped to correctly map longitude to x-axis and latitude to y-axis
+    lon_diff = [item[1] for item in diff]  # longitude on x-axis
+    lat_diff = [item[0] for item in diff]  # latitude on y-axis
+
+    # Convert to arcseconds if requested (1 degree = 3600 arcseconds)
+    if use_arcseconds:
+        lon_diff = [d * 3600 for d in lon_diff]
+        lat_diff = [d * 3600 for d in lat_diff]
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Scatter plot of the differences
+    ax.scatter(lon_diff, lat_diff, label='Coordinate Differences', color='blue', marker='o', s=10)
+
+    # Set plot limits
+    max_val_x = np.max(np.abs(lon_diff)) if lon_diff else 0
+    max_val_y = np.max(np.abs(lat_diff)) if lat_diff else 0
+    max_val = max(max_val_x, max_val_y)
+    plot_limit = max_val * 1.05
+
+    ax.set_xlim(-plot_limit, plot_limit)
+    ax.set_ylim(-plot_limit, plot_limit)
+
+    # Set aspect ratio to be equal to make it a "round silhouette"
+    ax.set_aspect('equal', adjustable='box')
+
+    # Add a zero-centered crosshair for reference
+    ax.axhline(0, color='black', lw=0.75, linestyle='--')
+    ax.axvline(0, color='black', lw=0.75, linestyle='--')
+
+    # Add labels and title
+    unit = "arcseconds" if use_arcseconds else "degrees"
+    ax.set_xlabel(f"Longitude Difference [{unit}]")
+    ax.set_ylabel(f"Latitude Difference [{unit}]")
+    ax.set_title("Zero-Centered Coordinate Differences")
+    ax.legend()
+    ax.grid(True, linestyle=':', alpha=0.7)
+
+    # Save plot
+    plt.tight_layout()
+    plt.savefig(filename, format='svg', bbox_inches='tight')
+    plt.close(fig)
+
+    return os.path.abspath(filename)

@@ -1,5 +1,7 @@
+from pathlib import Path
 import numpy as np
 import xarray as xr
+from geonss.coordinates import ECEFPosition
 
 
 def distance(da1: xr.DataArray, da2: xr.DataArray):
@@ -40,3 +42,62 @@ def drop_nan_vars(ds: xr.Dataset) -> xr.Dataset:
         return ds.drop_vars(vars_to_drop)
     else:
         return ds
+
+
+def get_project_root() -> Path:
+    """
+    Return the project root directory.
+    """
+    return Path(__file__).resolve().parent
+
+
+def get_project_output() -> Path:
+    """
+    Return the project output directory.
+    """
+    path = get_project_root().parent.parent / 'output'
+
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=True)
+
+    return path
+
+
+def print_distance_information(reference: ECEFPosition, positions: list[ECEFPosition]):
+    """
+    Calculate the distance between a reference position and a list of positions.
+
+    Args:
+        reference (ECEFPosition): The reference ECEF position.
+        positions (list[ECEFPosition]): A list of ECEF positions.
+
+    Returns:
+        dict: A dictionary with the distances and their indices.
+    """
+    distances = [reference.distance_to(pos) for pos in positions]
+
+    horizontal_distances, altitude_distances = zip(*[reference.horizontal_and_altitude_distance_to(pos) for pos in positions])
+
+    mean_distance = np.mean(distances)
+    mean_horizontal_distance = np.mean(horizontal_distances)
+    mean_altitude_distance = np.mean(altitude_distances)
+
+    std_distance = np.std(distances)
+    std_horizontal_distance = np.std(horizontal_distances)
+    std_altitude_distance = np.std(altitude_distances)
+
+    max_distance = np.max(distances)
+    max_horizontal_distance = np.max(horizontal_distances)
+    max_altitude_distance = np.max(altitude_distances)
+
+    # Create one big output string
+    output = f"""
+    Distance Information:
+    | Metric         | Distance (m)   | Horizontal (m) | Altitude (m)   |
+    |----------------|----------------|----------------|----------------|
+    | Mean           | {mean_distance:14.2f} | {mean_horizontal_distance:14.2f} | {mean_altitude_distance:14.2f} |
+    | Std. Deviation | {std_distance:14.2f} | {std_horizontal_distance:14.2f} | {std_altitude_distance:14.2f} |
+    | Max            | {max_distance:14.2f} | {max_horizontal_distance:14.2f} | {max_altitude_distance:14.2f} |
+    """
+
+    print(output)
