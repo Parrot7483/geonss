@@ -12,7 +12,7 @@ def test_solve_position_solution_1():
     navigation = load_cached(path_test_file("WTZR00DEU_R_20250570000_01D_MN.rnx"))
 
     # Only use a subset of the data for testing
-    random_indices = np.random.choice(len(observation['time']), size=25, replace=False)
+    random_indices = np.sort(np.random.choice(len(observation['time']), size=25, replace=False))
     observation = observation.isel({'time': random_indices})
 
     # Select constellations
@@ -22,7 +22,7 @@ def test_solve_position_solution_1():
     result = spp(observation, navigation)
 
     # Extract results
-    computed_positions = [ECEFPosition.from_array(pos) for pos in result.position.values * 1000.0]
+    computed_positions = [ECEFPosition.from_array(pos[0]) for pos in result.position * 1000.0]
 
     # Get true position from observation data
     true_position = ECEFPosition.from_array(observation.position)

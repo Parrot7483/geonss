@@ -6,7 +6,7 @@ import georinex as gr
 import numpy as np
 
 
-def test_main():
+def test_cli_program():
     # Create a temporary directory for output
     with tempfile.TemporaryDirectory() as temp_dir:
         output = os.path.join(temp_dir, "main-test.sp3")

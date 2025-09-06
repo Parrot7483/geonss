@@ -11,7 +11,7 @@ def test_interpolation():
     time_points = pd.date_range(
         start='2023-01-01T00:00:00',
         end='2023-01-01T03:00:00',
-        freq='1H'
+        freq='1h'
     ).to_numpy()
 
     # Just one satellite
