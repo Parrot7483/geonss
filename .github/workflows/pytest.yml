@@ -1,0 +1,30 @@
+name: Run pytest
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    
+    - name: Install dependencies
+      run: |
+        pip install . --disable-pip-version-check
+        pip install pytest --disable-pip-version-check
+    
+    - name: Run tests with pytest
+      run: |
+        python -m pytest
