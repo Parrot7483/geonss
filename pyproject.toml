@@ -13,7 +13,7 @@ dependencies = [
     "matplotlib==3.10.1",
     "multipledispatch",
     "numpy==2.2.4",
-    "paramiko==3.5.1",
+    "paramiko==4.0.0",
     "platformdirs",
     "scipy==1.15.2",
     "xarray==2025.1.2",
