@@ -3,13 +3,13 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    requirements = {
-      url = "path:./requirements.txt"; # Track requirements.txt as an input
+    pyproject = {
+      url = "path:./pyproject.toml"; # Track pyproject.toml as an input
       flake = false;
     };
   };
 
-  outputs = { self, nixpkgs, requirements }:
+  outputs = { self, nixpkgs, pyproject }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
     in
@@ -21,10 +21,10 @@
 
           # Required libraries for compiled Python packages (like NumPy)
           pythonLDLibPath = pkgs.lib.makeLibraryPath (with pkgs; [
-            glibc
-            openblas
             stdenv.cc.cc
+            glibc
             zlib
+            openblas
           ]);
         in
         {
@@ -45,6 +45,7 @@
                 export SHELL=${pkgs.bashInteractive}/bin/bash
                 export VENV_DIR=".venv"
                 export PIP_DISABLE_PIP_VERSION_CHECK=1
+
                 export LD_LIBRARY_PATH="${pythonLDLibPath}"
 
                 if [ ! -d "$VENV_DIR" ]; then
@@ -55,9 +56,8 @@
                 # Activate the virtual environment
                 source "$VENV_DIR/bin/activate"
 
-                echo "Installing and upgrading dependencies..."
-                pip install --upgrade -r ${requirements}
-                pip install -e .
+                echo "Installing package and dependencies from pyproject.toml..."
+                pip install --disable-pip-version-check --upgrade -e .
 
                 autoPatchelf
             '';

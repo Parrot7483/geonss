@@ -16,14 +16,14 @@
         "type": "github"
       }
     },
-    "requirements": {
+    "pyproject": {
       "flake": false,
       "locked": {
-        "path": "./requirements.txt",
+        "path": "./pyproject.toml",
         "type": "path"
       },
       "original": {
-        "path": "./requirements.txt",
+        "path": "./pyproject.toml",
         "type": "path"
       },
       "parent": []
@@ -31,7 +31,7 @@
     "root": {
       "inputs": {
         "nixpkgs": "nixpkgs",
-        "requirements": "requirements"
+        "pyproject": "pyproject"
       }
     }
   },
