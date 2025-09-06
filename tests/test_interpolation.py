@@ -58,8 +58,8 @@ def test_interpolation():
     clock_bias = result.sel(time=query_time[0], sv='G01').clock.values
 
     # Expected interpolated values (linear motion)
-    expected_pos = np.array([1.5 * 1000, 1.5 * 500, 1.5 * 250]) * 1000  # convert km to m
-    expected_vel = np.array([1000, 500, 250]) * 1000 / 3600  # km/h to m/s
+    expected_pos = np.array([1.5 * 1000, 1.5 * 500, 1.5 * 250])  # in km
+    expected_vel = np.array([1000, 500, 250]) / 3600  # km/h to km/s
     expected_clock = 1.5 * 0.1
 
     # Assert interpolated values match expected
