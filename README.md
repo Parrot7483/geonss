@@ -95,5 +95,14 @@ print(result)
 
 Contributions are welcome! Please open an issue or submit a pull request on the GitHub repository.
 
+- Nix flake development environment: `$ nix develop`
+- Regual environment with git: `$ pip install -e .[dev]`
+- Run tests with: `$ pytest`
+- Git hooks: copy (or symlink) provided hooks into `.git/hooks`
+  ```bash
+  $ cp hooks/* .git/hooks/
+  $ chmod +x .git/hooks/*
+  ```
+
 
 
