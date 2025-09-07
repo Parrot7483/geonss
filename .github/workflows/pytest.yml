@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --root-user-action=ignore -e .[dev]
+          pip install .[dev]
 
       - name: Run tests with pytest
         run: |
