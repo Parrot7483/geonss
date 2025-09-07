@@ -31,9 +31,12 @@ dev = [
 [project.scripts]
 geonss = "geonss.main:main"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["geonss*"]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["geonss"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
