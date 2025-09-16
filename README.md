@@ -29,7 +29,7 @@ The software can be used from the command line or as a Python library.
 
 ### Command Line Interface (CLI)
 
-```bash
+```
 $ geonss --help
 usage: geonss [-h] [-i ID] [-n NAVIGATION] [-s SP3] [-a ANTEX] [-o OUTPUT] [-t TLIM] [-v]
               [--disable-galileo] [--disable-gps] [--disable-signal-travel-time-correction]
