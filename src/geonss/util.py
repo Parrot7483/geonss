@@ -1,3 +1,7 @@
+"""
+This module provides utility functions for handling and processing GNSS data.
+"""
+
 from pathlib import Path
 import numpy as np
 import xarray as xr
@@ -37,11 +41,13 @@ def drop_nan_vars(ds: xr.Dataset) -> xr.Dataset:
     Returns:
         A new xarray Dataset with the all-NaN variables removed.
     """
-    vars_to_drop = [name for name, da in ds.data_vars.items() if da.isnull().all()]
+    vars_to_drop = \
+        [name for name, da in ds.data_vars.items() if da.isnull().all()]
+
     if vars_to_drop:
         return ds.drop_vars(vars_to_drop)
-    else:
-        return ds
+
+    return ds
 
 
 def get_project_root() -> Path:
@@ -76,7 +82,9 @@ def print_distance_information(reference: ECEFPosition, positions: list[ECEFPosi
     """
     distances = [reference.distance_to(pos) for pos in positions]
 
-    horizontal_distances, altitude_distances = zip(*[reference.horizontal_and_altitude_distance_to(pos) for pos in positions])
+    horizontal_distances, altitude_distances = zip(*[
+        reference.horizontal_and_altitude_distance_to(pos) for pos in positions
+    ])
 
     mean_distance = np.mean(distances)
     mean_horizontal_distance = np.mean(horizontal_distances)

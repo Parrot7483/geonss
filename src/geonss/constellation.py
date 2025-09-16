@@ -105,16 +105,18 @@ def get_constellation(satellite_id: str) -> Constellation:
 
 # noinspection SpellCheckingInspection
 def select_constellations(
-        df: Union[xr.Dataset, xr.DataArray],
-        gps: bool = False,
-        galileo: bool = False,
-        glonass: bool = False,
-        beidou: bool = False,
-        qzss: bool = False,
-        irnss: bool = False,
-        sbas: bool = False,
-        underscores: bool = False
+    df: Union[xr.Dataset, xr.DataArray],
+    gps: bool = False,
+    galileo: bool = False,
+    glonass: bool = False,
+    beidou: bool = False,
+    qzss: bool = False,
+    irnss: bool = False,
+    sbas: bool = False,
+    underscores: bool = False
 ) -> Union[xr.Dataset, xr.DataArray]:
+    # pylint: disable=too-many-positional-arguments
+    # pylint: disable=too-many-arguments
     """
     Select which GNSS constellations to keep in the dataset.
 

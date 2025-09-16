@@ -1,6 +1,10 @@
+"""
+This module provides functionality for applying corrections to GNSS measurements.
+"""
 import numpy as np
 
 def apply_phase_center_offset(ecef_position: np.ndarray, neu_offset: np.ndarray) -> np.ndarray:
+    # pylint: disable=too-many-locals
     """
     Apply phase center offset correction to satellite ECEF positions using vectorized operations.
     """
@@ -10,13 +14,15 @@ def apply_phase_center_offset(ecef_position: np.ndarray, neu_offset: np.ndarray)
 
     if ecef_position.ndim != 2 or ecef_position.shape[1] != 3:
         raise ValueError(
-            f"Internal Error: ecef_positions must be an (N, 3) array, got shape {ecef_position.shape}")
+            f"Internal Error: ecef_positions must be an (N, 3) array, got shape {ecef_position.shape}"
+        )
     if neu_offset.ndim != 2 or neu_offset.shape[1] != 3:
         raise ValueError(f"Internal Error: neu_offsets must be an (N, 3) array, got shape {neu_offset.shape}")
     if ecef_position.shape[0] != neu_offset.shape[0]:
         raise ValueError(
             f"Internal Error: Number of ECEF positions ({ecef_position.shape[0]}) "
-            f"must match number of NEU offsets ({neu_offset.shape[0]})")
+            f"must match number of NEU offsets ({neu_offset.shape[0]})"
+        )
 
     num_positions = ecef_position.shape[0]
     if num_positions == 0:
@@ -62,7 +68,6 @@ def apply_phase_center_offset(ecef_position: np.ndarray, neu_offset: np.ndarray)
     satellite_body_offsets = neu_offset[:, [1, 0, 2]]  # Shape (N, 3)
 
     # Apply N rotation matrices to N body_offset vectors using einsum for batch matrix-vector multiplication
-    # 'nij,nj->ni': For each i, multiply matrix R[i] (shape 3x3) by vector body_offset[i] (shape 3) -> result[i] (shape 3)
     ecef_offsets = np.einsum('nij,nj->ni', rotation_matrices, satellite_body_offsets)  # Shape (N, 3)
 
     # Subtract ECEF offset from original ECEF position (PCO points from Antenna Phase Center to Center of Mass)

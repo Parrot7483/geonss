@@ -1,5 +1,8 @@
-from enum import Enum
+"""
+This module provides functionality for handling and processing GNSS measurements.
+"""
 
+from enum import Enum
 
 class MeasurementType(Enum):
     """
@@ -13,14 +16,13 @@ class MeasurementType(Enum):
     def __str__(self):
         if self == MeasurementType.PSEUDO_RANGE:
             return "Pseudo Range"
-        elif self == MeasurementType.PHASE:
+        if self == MeasurementType.PHASE:
             return "Phase"
-        elif self == MeasurementType.SNR:
+        if self == MeasurementType.SNR:
             return "SNR"
-        else:
-            return "Unknown"
 
-    # Function to return the type of a measurment given the 3 letter RINEX identifier
+        return "Unknown"
+
     @staticmethod
     def get_type(meas: str) -> 'MeasurementType':
         """
@@ -34,12 +36,14 @@ class MeasurementType(Enum):
         """
         if meas[0] == "C":
             return MeasurementType.PSEUDO_RANGE
-        elif meas[0] == "L":
+
+        if meas[0] == "L":
             return MeasurementType.PHASE
-        elif meas[0] == "S":
+
+        if meas[0] == "S":
             return MeasurementType.SNR
-        else:
-            raise ValueError(f"Unknown measurement type for {meas}")
+
+        raise ValueError(f"Unknown measurement type for {meas}")
 
 
 def get_frequency(meas: str) -> float:
@@ -50,11 +54,13 @@ def get_frequency(meas: str) -> float:
         # Get the frequency from the measurement type
         if meas[1] == "1":
             return 1575.42
-        elif meas[1] == "2":
+
+        if meas[1] == "2":
             return 1227.60
-        elif meas[1] == "5":
+
+        if meas[1] == "5":
             return 1176.45
-        else:
-            raise ValueError(f"Unknown frequency for {meas}")
-    else:
-        raise ValueError(f"Unknown measurement type for {meas}")
+
+        raise ValueError(f"Unknown frequency for {meas}")
+
+    raise ValueError(f"Unknown measurement type for {meas}")

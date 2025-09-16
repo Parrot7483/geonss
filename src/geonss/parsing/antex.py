@@ -1,15 +1,26 @@
+"""
+Module for parsing ANTEX files and converting them to xarray Datasets.
+
+This module provides functions to parse ANTEX files containing satellite antenna
+phase center offset (PCO) data and convert it into structured xarray Datasets.
+"""
+from datetime import datetime
 import logging
 import os
 
+from midgard import parsers
+from platformdirs import user_cache_dir
 import numpy as np
 import pandas as pd
 import xarray as xr
-from midgard import parsers
 
 logger = logging.getLogger(__name__)
 
 
 def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
+    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-branches
+    # pylint: disable=too-many-statements
     """Convert ANTEX data to an xarray Dataset containing Satellite Phase Center Offset (PCO).
 
     The dataset structure includes NEU offsets and associated metadata indexed by
@@ -34,26 +45,32 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
         data = parser.as_dict()
         meta = parser.meta
     except Exception as e:
-        logger.error(f"Failed to parse ANTEX file '{path}' using midgard: {e}")
-        raise RuntimeError(f"Midgard parser failed for ANTEX file: {path}") from e
+        logger.error(
+            "Failed to parse ANTEX file '%s' using midgard: %s", path, e)
+        raise RuntimeError(
+            f"Midgard parser failed for ANTEX file: {path}") from e
 
     # --- 2. Flatten Data ---
     records = []
     offsets = []
     # Filter for satellite antennas only (Standard 3-char GNSS identifiers)
-    satellite_keys = {key for key in data if isinstance(key, str) and len(key) == 3 and key[0] in 'GREJCISM'}
+    satellite_keys = {key for key in data if isinstance(
+        key, str) and len(key) == 3 and key[0] in 'GREJCISM'}
 
     for sat in satellite_keys:
         valid_periods = data.get(sat, {})  # Use .get for safety
         if not isinstance(valid_periods, dict):
-            logger.warning(f"Unexpected data structure for satellite {sat} in parsed data. Skipping.")
+            logger.warning(
+                "Unexpected data structure for satellite %s in parsed data. Skipping.", sat)
             continue
 
         for valid_from_str, values in valid_periods.items():
             # Check if 'values' is a dictionary before proceeding
             if not isinstance(values, dict):
                 logger.warning(
-                    f"Skipping invalid period data for {sat} at {valid_from_str}. Expected dict, got {type(values)}.")
+                    "Skipping invalid period data for %s at %s. Expected dict, got %s.",
+                    sat, valid_from_str, type(values)
+                )
                 continue
 
             try:
@@ -62,7 +79,11 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
                 valid_until_ts = pd.to_datetime(values["valid_until"])
             except (ValueError, TypeError, KeyError) as e:
                 logger.warning(
-                    f"Skipping period for {sat} due to invalid/missing date format: {valid_from_str} or 'valid_until'. Error: {e}")
+                    "Skipping period for %s due to invalid/missing date format: %s or 'valid_until'. Error: %s",
+                    sat,
+                    valid_from_str,
+                    e
+                )
                 continue
 
             cospar_id = values.get("cospar_id", "")
@@ -88,14 +109,25 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
                 # Ensure NEU data is a list/tuple/array of 3 numbers
                 if not isinstance(neu_offset, (list, tuple, np.ndarray)) or len(neu_offset) != 3:
                     logger.warning(
-                        f"Skipping invalid NEU offset format/length for {sat}, {freq_id} at {valid_from_ts}: {neu_offset}")
+                        "Skipping invalid NEU offset format/length for %s, %s at %s: %s",
+                        sat,
+                        freq_id,
+                        valid_from_ts,
+                        neu_offset
+                    )
                     continue
                 try:
                     # Convert to float, handle potential Nones or non-numeric values
                     offset_n, offset_e, offset_u = map(float, neu_offset)
                 except (ValueError, TypeError) as e:
                     logger.warning(
-                        f"Skipping NEU offset with non-numeric values for {sat}, {freq_id} at {valid_from_ts}: {neu_offset}. Error: {e}")
+                        "Skipping NEU offset with non-numeric values for %s, %s at %s: %s. Error: %s",
+                        sat,
+                        freq_id,
+                        valid_from_ts,
+                        neu_offset,
+                        e
+                    )
                     continue
 
                 offsets.append({
@@ -118,26 +150,35 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
         df = df.set_index(["time", "sv"])
         df_offset = df_offset.set_index(["time", "sv", "frequency"])
     except KeyError as e:
-        logger.error(f"Failed to set multi-index. Missing column: {e}. Columns present: {df.columns.tolist()}")
-        raise RuntimeError("DataFrame construction failed, cannot set multi-index.") from e
+        logger.error(
+            "Failed to set multi-index. Missing column: %s. Columns present: %s", e, df.columns.tolist()
+        )
+        raise RuntimeError(
+            "DataFrame construction failed, cannot set multi-index.") from e
 
     # --- 5. Convert to xarray Dataset ---
     try:
         ds = xr.Dataset.from_dataframe(df)
         ds_offset = xr.Dataset.from_dataframe(df_offset)
     except Exception as e:
-        logger.error(f"Failed to convert DataFrame to xarray Dataset: {e}")
+        logger.error("Failed to convert DataFrame to xarray Dataset: %s", e)
         raise RuntimeError("xarray Dataset conversion failed.") from e
 
     # --- 6. Combine Offsets into a single DataArray ---
     # Stack the individual offset variables into a new 'offset' variable with a 'NEU' dimension
     try:
-        ds_offset_aligned = ds_offset[['offset_n', 'offset_e', 'offset_u']].to_array(dim='NEU', name='offset')
+        ds_offset_aligned = ds_offset[['offset_n', 'offset_e', 'offset_u']].to_array(
+            dim='NEU', name='offset')
         # Assign proper coordinate values to the new NEU dimension
-        ds_offset_aligned = ds_offset_aligned.assign_coords(NEU=['n', 'e', 'u'])
+        ds_offset_aligned = ds_offset_aligned.assign_coords(
+            NEU=['n', 'e', 'u'])
     except KeyError as e:
-        logger.error(f"Failed to combine offsets. Missing variable: {e}. Variables present: {list(ds.data_vars)}")
-        raise RuntimeError("Offset combination failed due to missing variables.") from e
+        logger.error(
+            "Failed to combine offsets. Missing variable: %s. Variables present: %s}",
+            e, list(ds.data_vars)
+        )
+        raise RuntimeError(
+            "Offset combination failed due to missing variables.") from e
 
     # --- 7. Final Dataset ---
     # Drop the original individual offset variables
@@ -165,7 +206,8 @@ def parse_antex_to_pco_xarray(path: str) -> xr.Dataset:
     })
     # Attributes for coordinates (now index levels or separate coordinates)
     ds['time'].attrs.update({"long_name": "Validity start time"})
-    ds['NEU'].attrs.update({"long_name": "NEU components", "description": "North, East, Up"})
+    ds['NEU'].attrs.update(
+        {"long_name": "NEU components", "description": "North, East, Up"})
     ds['sv'].attrs.update({"long_name": "Satellite vehicle identifier"})
     ds['frequency'].attrs.update({"long_name": "Frequency identifier"})
     ds['valid_until'].attrs.update({"long_name": "Validity end time"})
@@ -187,9 +229,6 @@ def load_cached_antex(antex_path: str) -> xr.Dataset:
     Returns:
         xr.Dataset: Dataset containing satellite PCO values from the ANTEX file
     """
-    from platformdirs import user_cache_dir
-    from datetime import datetime
-    import os.path
 
     # Get the user cache directory for the application
     cache_dir = user_cache_dir("georinex")

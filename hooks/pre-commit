@@ -1,14 +1,24 @@
 #!/bin/sh
 #
-# Pre-commit hook that runs pytest before allowing a commit
+# Pre-commit hook that runs pylint and pytest before allowing a commit
 # 
 # To install: cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 #
 
-echo "Running pytest before commit..."
+echo "Running pylint and pytest before commit..."
 
 # Ensure we're in the repository root
 cd "$(git rev-parse --show-toplevel)"
+
+# Run pylint with the configuration from pyproject.toml
+pylint src/ --fail-under=0 --exit-zero
+
+# Check the exit status of pylint
+if [ $? -ne 0 ]; then
+    echo "❌ Pylint failed! Commit aborted."
+    echo "Please fix the pylint issues before committing."
+    exit 1
+fi
 
 # Run pytest with the configuration from pyproject.toml
 python -m pytest
@@ -20,5 +30,6 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "✅ All tests passed! Proceeding with commit."
+echo "✅ All checks passed! Proceeding with commit."
 exit 0
+

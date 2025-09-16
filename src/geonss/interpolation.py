@@ -1,4 +1,16 @@
-import multipledispatch as md
+"""
+This module provides functionality for interpolating satellite orbit positions and correcting them using ANTEX data.
+
+The module includes functions for:
+- Collapsing sparse dimensions in xarray datasets
+- Correcting satellite positions using ANTEX Phase Center Offset (PCO) data
+- Interpolating satellite positions and velocities from SP3 data onto query times using Lagrange polynomials
+- Combining interpolation and position correction in a single function
+
+The module is designed to work with precise orbit data (SP3 format) and ANTEX data for 
+accurate satellite position estimation.
+"""
+
 import numpy as np
 import scipy as sp
 import xarray as xr
@@ -87,10 +99,16 @@ def correct_positions_with_antex(pos_ds: xr.Dataset, antex_ds: xr.Dataset) -> xr
     """
     # Input Validation (structure and content)
     if 'position' not in pos_ds.data_vars or 'sv' not in pos_ds.coords or 'time' not in pos_ds.coords:
-        raise ValueError("pos_ds Dataset is missing required variables/coordinates ('position', 'sv', 'time').")
-    if 'offset' not in antex_ds.data_vars or 'valid_until' not in antex_ds.data_vars or 'sv' not in antex_ds.coords or 'frequency' not in antex_ds.coords or 'time' not in antex_ds.coords:
         raise ValueError(
-            "antex_ds Dataset is missing required variables/coordinates ('offset', 'valid_until', 'sv', 'frequency', 'time').")
+            "pos_ds Dataset is missing required variables/coordinates ('position', 'sv', 'time')."
+        )
+    if 'offset' not in antex_ds.data_vars or \
+        'valid_until' not in antex_ds.data_vars or \
+        'sv' not in antex_ds.coords or \
+        'frequency' not in antex_ds.coords or \
+            'time' not in antex_ds.coords:
+        raise ValueError("antex_ds Dataset is missing required variables/coordinates \
+            ('offset', 'valid_until', 'sv', 'frequency', 'time').")
 
     def _process_satellite_group(satellite_position_group: xr.Dataset):
         """
@@ -98,7 +116,7 @@ def correct_positions_with_antex(pos_ds: xr.Dataset, antex_ds: xr.Dataset) -> xr
         """
 
         satellite_id: str = satellite_position_group.sv.values[0]
-        single_satellite_data = satellite_position_group.squeeze('sv')  # Remove sv dimension
+        single_satellite_data = satellite_position_group.squeeze('sv')
 
         # Determine Constellation and Default Frequency
         constellation = get_constellation(satellite_id)
@@ -109,30 +127,40 @@ def correct_positions_with_antex(pos_ds: xr.Dataset, antex_ds: xr.Dataset) -> xr
         elif constellation == Constellation.BEIDOU:
             default_frequency = 'C01'
         else:
-            raise ValueError(f"Unsupported constellation: {constellation} for satellite {satellite_id}")
+            raise ValueError(
+                f"Unsupported constellation: {constellation} for satellite {satellite_id}")
 
         # Select and Validate ANTEX Data
         try:
-            satellite_antex_data = antex_ds.sel(sv=satellite_id, frequency=default_frequency).dropna(dim='time',
-                                                                                                     subset=['offset'],
-                                                                                                     how='all')
-        except KeyError:
-            raise ValueError(f"Could not find ANTEX data for SV={satellite_id}, Freq={default_frequency}")
+            satellite_antex_data = antex_ds \
+                .sel(sv=satellite_id, frequency=default_frequency) \
+                .dropna(dim='time', subset=['offset'],how='all')
+        except KeyError as e:
+            raise ValueError(
+                f"Could not find ANTEX data for SV={satellite_id}, Freq={default_frequency}"
+            ) from e
 
         if satellite_antex_data.time.size == 0:
             raise ValueError(
-                f"No valid ANTEX offset data found for SV={satellite_id}, Freq={default_frequency} after dropping NaNs.")
+                f"No valid ANTEX offset data found for SV={satellite_id}, \
+                    Freq={default_frequency} after dropping NaNs."
+            )
 
         # Pad-select ANTEX data corresponding to the position timestamps
         try:
             selected_antex_valid_until = satellite_antex_data.valid_until.sel(time=single_satellite_data.time,
                                                                               method='pad')
-            selected_antex_offsets = satellite_antex_data.offset.sel(time=single_satellite_data.time, method='pad')
+            selected_antex_offsets = satellite_antex_data.offset.sel(
+                time=single_satellite_data.time, method='pad')
         except KeyError as e:
             raise ValueError(
-                f"Error selecting ANTEX data for SV={satellite_id} at times {single_satellite_data.time.values}. Missing time points? Error: {e}")
+                f"Error selecting ANTEX data for SV={satellite_id} at times {single_satellite_data.time.values}. \
+                    Missing time points? Error: {e}"
+            ) from e
         except Exception as e:
-            raise RuntimeError(f"Unexpected error during ANTEX data selection for {satellite_id}: {e}")
+            raise RuntimeError(
+                f"Unexpected error during ANTEX data selection for {satellite_id}: {e}"
+            ) from e
 
         # Check if any selected ANTEX data record has expired
         if np.any(selected_antex_valid_until.values < single_satellite_data.time.values):
@@ -145,7 +173,8 @@ def correct_positions_with_antex(pos_ds: xr.Dataset, antex_ds: xr.Dataset) -> xr
         original_positions = single_satellite_data.position.values
         neu_offsets = selected_antex_offsets.values
 
-        corrected_positions: np.ndarray = apply_phase_center_offset(original_positions, neu_offsets)
+        corrected_positions: np.ndarray = apply_phase_center_offset(
+            original_positions, neu_offsets)
 
         # Update the position data in the dataset copy
         processed_group = single_satellite_data.copy()
@@ -157,7 +186,8 @@ def correct_positions_with_antex(pos_ds: xr.Dataset, antex_ds: xr.Dataset) -> xr
     corrected_positions_ds = pos_ds.groupby('sv').map(_process_satellite_group)
 
     # Transposed corrected positions to match original dataset structure
-    transposed_positions_ds = corrected_positions_ds.transpose('time', 'sv', 'ECEF')
+    transposed_positions_ds = corrected_positions_ds.transpose(
+        'time', 'sv', 'ECEF')
 
     # Ensure descriptions are accurate after correction
     transposed_positions_ds['position'].attrs.update({
@@ -168,23 +198,12 @@ def correct_positions_with_antex(pos_ds: xr.Dataset, antex_ds: xr.Dataset) -> xr
     return transposed_positions_ds
 
 
-@md.dispatch(xr.Dataset, xr.Dataset)
 def interpolate_orbit_positions(
         sp3_full_data: xr.Dataset,
         query_times: xr.Dataset,
+        window: int = 8,
 ) -> xr.Dataset:
-    """
-    Wrapper to call with default window size of 8.
-    """
-    return interpolate_orbit_positions(sp3_full_data, query_times, 8)
-
-
-@md.dispatch(xr.Dataset, xr.Dataset, int)
-def interpolate_orbit_positions(
-        sp3_full_data: xr.Dataset,
-        query_times: xr.Dataset,
-        window: int,
-) -> xr.Dataset:
+    # pylint: disable=too-many-statements
     """
     Interpolates satellite positions and velocities from SP3 data onto query times.
 
@@ -224,7 +243,8 @@ def interpolate_orbit_positions(
 
     # Validate window size argument
     if window < 2 or window > 20:
-        raise ValueError("Window size must be at least 2 and at most 20 for Lagrange interpolation")
+        raise ValueError(
+            "Window size must be at least 2 and at most 20 for Lagrange interpolation")
 
     def _calculate_slice_indices(
             sv_time_group: xr.Dataset,
@@ -238,20 +258,24 @@ def interpolate_orbit_positions(
         # Find SP3 points bracketing the time bucket
         try:
             # Find the SP3 time point immediately before or at the start of the group interval
-            sp3_left_bracket_time = sp3_sv_data.time.sel(time=group_first_time, method='pad').values
+            sp3_left_bracket_time = sp3_sv_data.time.sel(
+                time=group_first_time, method='pad').values
             # Find the SP3 time point immediately after or at the end of the group interval
-            sp3_right_bracket_time = sp3_sv_data.time.sel(time=group_last_time, method='backfill').values
-        except KeyError:
+            sp3_right_bracket_time = sp3_sv_data.time.sel(
+                time=group_last_time, method='backfill').values
+        except KeyError as e:
             # This occurs if the group times are entirely outside the SP3 time range
             raise KeyError(
                 f"Query times for SV {satellite_id} ({group_first_time} to {group_last_time}) "
                 f"fall completely outside the available SP3 time range "
                 f"({sp3_sv_data.time.min().values} to {sp3_sv_data.time.max().values})."
-            )
+            ) from e
 
         # Get the integer indices in the SP3 time array corresponding to these bracketing times
-        sp3_left_bracket_index = np.int64(np.where(sp3_sv_data.time.values == sp3_left_bracket_time)[0][0])
-        sp3_right_bracket_index = np.int64(np.where(sp3_sv_data.time.values == sp3_right_bracket_time)[0][0])
+        sp3_left_bracket_index = np.int64(
+            np.where(sp3_sv_data.time.values == sp3_left_bracket_time)[0][0])
+        sp3_right_bracket_index = np.int64(
+            np.where(sp3_sv_data.time.values == sp3_right_bracket_time)[0][0])
 
         # Calculate window start/end indices based on the desired window size
         half_window_floor = window // 2
@@ -261,7 +285,8 @@ def interpolate_orbit_positions(
         # Calculate initial window boundaries
         num_sp3_points = len(sp3_sv_data.time)
         start_index = max(0, sp3_left_bracket_index - half_window_floor)
-        end_index = min(num_sp3_points, sp3_right_bracket_index + half_window_ceil)
+        end_index = min(
+            num_sp3_points, sp3_right_bracket_index + half_window_ceil)
 
         # Extend the window if it is too small
         if (end_index - start_index) < window:
@@ -285,6 +310,7 @@ def interpolate_orbit_positions(
         return start_index, end_index
 
     def _interpolate_group(sv_time_group: xr.Dataset) -> xr.Dataset:
+        # pylint: disable=too-many-locals
         """
         Internal helper function to perform interpolation for a single satellite's time group.
 
@@ -302,7 +328,8 @@ def interpolate_orbit_positions(
         # Select the SP3 data relevant to this specific satellite
         sp3_sv_data = sp3_full_data.sel(sv=satellite_id)
 
-        start_index, end_index = _calculate_slice_indices(sv_time_group, sp3_sv_data, satellite_id)
+        start_index, end_index = _calculate_slice_indices(
+            sv_time_group, sp3_sv_data, satellite_id)
 
         # Create the slice object for selecting the window data
         sp3_window_indices = slice(start_index, end_index)
@@ -315,10 +342,12 @@ def interpolate_orbit_positions(
         reference_time_ns = sp3_sv_window_data.time.values[0].astype(np.int64)
 
         # Calculate SP3 times within the window relative to the reference time, in seconds
-        sp3_times_relative_sec = (sp3_sv_window_data.time.values.astype(np.int64) - reference_time_ns) / 1e9
+        sp3_times_relative_sec = (sp3_sv_window_data.time.values.astype(
+            np.int64) - reference_time_ns) / 1e9
 
         # Calculate query times within the group relative to the same reference time, in seconds
-        group_times_relative_sec = (sv_time_group.time.values.astype(np.int64) - reference_time_ns) / 1e9
+        group_times_relative_sec = (sv_time_group.time.values.astype(
+            np.int64) - reference_time_ns) / 1e9
 
         # Extract ECEF coordinates from the SP3 window data
         # Convert position from kilometers (SP3 standard) to meters
@@ -331,16 +360,21 @@ def interpolate_orbit_positions(
 
         try:
             # Create the Lagrange polynomials for each ECEF coordinate
-            lagrange_poly_x = sp.interpolate.lagrange(sp3_times_relative_sec, x_coords_m)
-            lagrange_poly_y = sp.interpolate.lagrange(sp3_times_relative_sec, y_coords_m)
-            lagrange_poly_z = sp.interpolate.lagrange(sp3_times_relative_sec, z_coords_m)
+            lagrange_poly_x = sp.interpolate.lagrange(
+                sp3_times_relative_sec, x_coords_m)
+            lagrange_poly_y = sp.interpolate.lagrange(
+                sp3_times_relative_sec, y_coords_m)
+            lagrange_poly_z = sp.interpolate.lagrange(
+                sp3_times_relative_sec, z_coords_m)
 
             # Interpolate positions (in meters) at the relative query times
             interpolated_x_m = lagrange_poly_x(group_times_relative_sec)
             interpolated_y_m = lagrange_poly_y(group_times_relative_sec)
             interpolated_z_m = lagrange_poly_z(group_times_relative_sec)
         except ValueError as e:
-            raise ValueError(f"Error creating Lagrange polynomial for SV {satellite_id}: {e}")
+            raise ValueError(
+                f"Error creating Lagrange polynomial for SV {satellite_id}: {e}"
+            ) from e
 
         try:
             # Calculate the derivatives of the Lagrange polynomials for velocity
@@ -349,20 +383,28 @@ def interpolate_orbit_positions(
             lagrange_poly_z_derivative = lagrange_poly_z.deriv()
 
             # Interpolate velocities (in meters per second) at the relative query times
-            interpolated_vx_m_per_s = lagrange_poly_x_derivative(group_times_relative_sec)
-            interpolated_vy_m_per_s = lagrange_poly_y_derivative(group_times_relative_sec)
-            interpolated_vz_m_per_s = lagrange_poly_z_derivative(group_times_relative_sec)
+            interpolated_vx_m_per_s = lagrange_poly_x_derivative(
+                group_times_relative_sec)
+            interpolated_vy_m_per_s = lagrange_poly_y_derivative(
+                group_times_relative_sec)
+            interpolated_vz_m_per_s = lagrange_poly_z_derivative(
+                group_times_relative_sec)
         except ValueError as e:
-            raise ValueError(f"Error creating Lagrange polynomial derivative for SV {satellite_id}: {e}")
+            raise ValueError(
+                f"Error creating Lagrange polynomial derivative for SV {satellite_id}: {e}"
+            ) from e
 
         try:
             # Create the Lagrange polynomial for clock bias
-            lagrange_poly_clock = sp.interpolate.lagrange(sp3_times_relative_sec, clock)
+            lagrange_poly_clock = sp.interpolate.lagrange(
+                sp3_times_relative_sec, clock)
 
             # Interpolate clock bias at the relative query times
             interpolated_clock = lagrange_poly_clock(group_times_relative_sec)
         except ValueError as e:
-            raise ValueError(f"Error creating Lagrange polynomial for clock bias for SV {satellite_id}: {e}")
+            raise ValueError(
+                f"Error creating Lagrange polynomial for clock bias for SV {satellite_id}: {e}"
+            ) from e
 
         # Convert back to km
         interpolated_position = np.stack([
@@ -414,11 +456,13 @@ def interpolate_orbit_positions(
     # Group the query times by satellite vehicle ID and time bin
     grouped_result = query_times.groupby(
         sv=xr.groupers.UniqueGrouper(),
-        time=xr.groupers.BinGrouper(bins=sp3_full_data.time.values, include_lowest=True),
+        time=xr.groupers.BinGrouper(
+            bins=sp3_full_data.time.values, include_lowest=True),
     ).map(_interpolate_group)
 
     # Collapse the time_bins dimension
-    reduced_result = _collapse_sparse_dimension(grouped_result, dim='time_bins')
+    reduced_result = _collapse_sparse_dimension(
+        grouped_result, dim='time_bins')
 
     # Add attributes
     annotated_result = reduced_result.assign_attrs({
@@ -445,24 +489,11 @@ def interpolate_orbit_positions(
     return transposed_result
 
 
-@md.dispatch(xr.Dataset, xr.Dataset, xr.Dataset)
-def interpolate_orbit_positions(
-        sp3_full_data: xr.Dataset,
-        query_times: xr.Dataset,
-        antex: xr.Dataset,
-) -> xr.Dataset:
-    """
-    Wrapper to call with default window size of 8.
-    """
-    return interpolate_orbit_positions(sp3_full_data, query_times, antex, 8)
-
-
-@md.dispatch(xr.Dataset, xr.Dataset, xr.Dataset, int)
-def interpolate_orbit_positions(
+def interpolate_orbit_positions_with_antex_correction(
         sp3_full_data: xr.Dataset,
         query_times: xr.Dataset,
         antex_ds: xr.Dataset,
-        window: int,
+        window: int = 8,
 ) -> xr.Dataset:
     """
     Interpolates satellite positions, velocities, and clock biases from SP3 data
@@ -506,7 +537,8 @@ def interpolate_orbit_positions(
         RuntimeError: For unexpected issues during processing (e.g., ANTEX selection).
     """
     # Interpolate positions, velocities, and clock biases using the base function
-    interpolated_ds = interpolate_orbit_positions(sp3_full_data, query_times, window)
+    interpolated_ds = interpolate_orbit_positions(
+        sp3_full_data, query_times, window)
 
     # Correct the interpolated positions using the ANTEX data
     # The correct_positions_with_antex function modifies the 'position' variable

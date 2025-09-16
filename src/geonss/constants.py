@@ -1,3 +1,6 @@
+"""
+This module defines constants used throughout the GNSS processing pipeline.
+"""
 # noinspection SpellCheckingInspection
 
 import numpy as np

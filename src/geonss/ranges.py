@@ -28,19 +28,28 @@ logger = logging.getLogger(__name__)
 # Reference latitude values in degrees
 latitudes = np.array([15, 30, 45, 60, 75])
 # Hydrostatic average coefficients
-a_hydrostatic_average = np.array([1.2769934e-3, 1.2683230e-3, 1.2465397e-3, 1.2196049e-3, 1.2045996e-3])
-b_hydrostatic_average = np.array([2.9153695e-3, 2.9152299e-3, 2.9288445e-3, 2.9022565e-3, 2.9024912e-3])
-c_hydrostatic_average = np.array([62.610505e-3, 62.837393e-3, 63.721774e-3, 63.824265e-3, 64.258455e-3])
+a_hydrostatic_average = np.array(
+    [1.2769934e-3, 1.2683230e-3, 1.2465397e-3, 1.2196049e-3, 1.2045996e-3])
+b_hydrostatic_average = np.array(
+    [2.9153695e-3, 2.9152299e-3, 2.9288445e-3, 2.9022565e-3, 2.9024912e-3])
+c_hydrostatic_average = np.array(
+    [62.610505e-3, 62.837393e-3, 63.721774e-3, 63.824265e-3, 64.258455e-3])
 
 # Hydrostatic amplitude coefficients
-a_hydrostatic_amplitude = np.array([0.0, 1.2709626e-5, 2.6523662e-5, 3.4000452e-5, 4.1202191e-5])
-b_hydrostatic_amplitude = np.array([0.0, 2.1414979e-5, 3.0160779e-5, 7.2562722e-5, 11.723375e-5])
-c_hydrostatic_amplitude = np.array([0.0, 9.0128400e-5, 4.3497037e-5, 84.795348e-5, 170.37206e-5])
+a_hydrostatic_amplitude = np.array(
+    [0.0, 1.2709626e-5, 2.6523662e-5, 3.4000452e-5, 4.1202191e-5])
+b_hydrostatic_amplitude = np.array(
+    [0.0, 2.1414979e-5, 3.0160779e-5, 7.2562722e-5, 11.723375e-5])
+c_hydrostatic_amplitude = np.array(
+    [0.0, 9.0128400e-5, 4.3497037e-5, 84.795348e-5, 170.37206e-5])
 
 # Wet coefficients
-a_wet = np.array([5.8021897e-4, 5.6794847e-4, 5.8118019e-4, 5.9727542e-4, 6.1641693e-4])
-b_wet = np.array([1.4275268e-3, 1.5138625e-3, 1.4572752e-3, 1.5007428e-3, 1.7599082e-3])
-c_wet = np.array([4.347296e-2, 4.672951e-2, 4.390893e-2, 4.462698e-2, 5.473603e-2])
+a_wet = np.array([5.8021897e-4, 5.6794847e-4,
+                 5.8118019e-4, 5.9727542e-4, 6.1641693e-4])
+b_wet = np.array([1.4275268e-3, 1.5138625e-3,
+                 1.4572752e-3, 1.5007428e-3, 1.7599082e-3])
+c_wet = np.array(
+    [4.347296e-2, 4.672951e-2, 4.390893e-2, 4.462698e-2, 5.473603e-2])
 
 # Height correction constants
 a_ht, b_ht, c_ht = 2.53e-5, 5.49e-3, 1.14e-3
@@ -50,12 +59,18 @@ zhd = np.float64(2.3)
 zwd = np.float64(0.2)
 
 # Create partial functions for each coefficient interpolation
-interpolate_hydrostatic_avg_a = partial(np.interp, xp=latitudes, fp=a_hydrostatic_average)
-interpolate_hydrostatic_avg_b = partial(np.interp, xp=latitudes, fp=b_hydrostatic_average)
-interpolate_hydrostatic_avg_c = partial(np.interp, xp=latitudes, fp=c_hydrostatic_average)
-interpolate_hydrostatic_amp_a = partial(np.interp, xp=latitudes, fp=a_hydrostatic_amplitude)
-interpolate_hydrostatic_amp_b = partial(np.interp, xp=latitudes, fp=b_hydrostatic_amplitude)
-interpolate_hydrostatic_amp_c = partial(np.interp, xp=latitudes, fp=c_hydrostatic_amplitude)
+interpolate_hydrostatic_avg_a = partial(
+    np.interp, xp=latitudes, fp=a_hydrostatic_average)
+interpolate_hydrostatic_avg_b = partial(
+    np.interp, xp=latitudes, fp=b_hydrostatic_average)
+interpolate_hydrostatic_avg_c = partial(
+    np.interp, xp=latitudes, fp=c_hydrostatic_average)
+interpolate_hydrostatic_amp_a = partial(
+    np.interp, xp=latitudes, fp=a_hydrostatic_amplitude)
+interpolate_hydrostatic_amp_b = partial(
+    np.interp, xp=latitudes, fp=b_hydrostatic_amplitude)
+interpolate_hydrostatic_amp_c = partial(
+    np.interp, xp=latitudes, fp=c_hydrostatic_amplitude)
 interpolate_wet_a = partial(np.interp, xp=latitudes, fp=a_wet)
 interpolate_wet_b = partial(np.interp, xp=latitudes, fp=b_wet)
 interpolate_wet_c = partial(np.interp, xp=latitudes, fp=c_wet)
@@ -66,7 +81,8 @@ def niell_mapping(
         elevation: np.ndarray | np.float64,
         height: np.ndarray | np.float64,
         latitude: np.ndarray | np.float64
-) -> (np.ndarray, np.ndarray):
+) -> Tuple[np.ndarray, np.ndarray]:
+    # pylint: disable=too-many-locals
     """
     Niell Mapping Function using NumPy interpolation (vectorized).
 
@@ -106,7 +122,8 @@ def niell_mapping(
     c_d = interpolate_hydrostatic_coefficient(day_of_year, latitude, interpolate_hydrostatic_avg_c,
                                               interpolate_hydrostatic_amp_c)
 
-    m_dry = mapping(elevation, a_d, b_d, c_d) + delta_mapping(elevation, height_km)
+    m_dry = mapping(elevation, a_d, b_d, c_d) + \
+        delta_mapping(elevation, height_km)
 
     a_w = interpolate_wet_a(latitude)
     b_w = interpolate_wet_b(latitude)
@@ -142,9 +159,15 @@ def ionospheric_correction(
         c5: np.float64 | np.ndarray | xr.DataArray,
         s1: np.float64 | np.ndarray | xr.DataArray,
         s5: np.float64 | np.ndarray | xr.DataArray,
-        f1: np.float64 | np.ndarray | xr.DataArray = np.float64(1575.42),  # L1 / E1 frequency in MHz
-        f5: np.float64 | np.ndarray | xr.DataArray = np.float64(1176.45),  # L5 / E5a frequency in MHz
-) -> (np.float64 | np.ndarray | xr.DataArray, np.float64 | np.ndarray | xr.DataArray):
+        f1: np.float64 | np.ndarray | xr.DataArray
+            = np.float64(1575.42),  # L1 / E1 frequency in MHz
+        f5: np.float64 | np.ndarray | xr.DataArray
+            = np.float64(1176.45),  # L5 / E5a frequency in MHz
+) -> tuple[np.float64 | np.ndarray | xr.DataArray, np.float64 | np.ndarray | xr.DataArray]:
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
+    # pylint: disable=too-many-locals
+
     """
     Ionospheric correction using the dual-frequency ionosphere-free combination.
 
@@ -200,7 +223,7 @@ def ionospheric_correction(
 
     # Create a mask for valid calculated weights (finite and positive)
     valid_weight_mask = xr.ufuncs.isfinite(weight) & (weight > 0) & xr.ufuncs.isfinite(variance_term) & (
-                variance_term > 0)
+        variance_term > 0)
 
     # Also ensure the iono_free calculation itself is finite
     valid_iono_mask = xr.ufuncs.isfinite(iono_free)
@@ -220,7 +243,8 @@ def ionospheric_correction(
         corrected_range_final.attrs['formula'] = '(f1^2*C1 - f5^2*C5) / (f1^2 - f5^2)'
         corrected_range_final.attrs['input_vars'] = f"c1={c1.name}, c5={c5.name}, s1={s1.name}, s5={s5.name}"
 
-        combined_weight_final = combined_weight_final.rename("iono_free_weight")
+        combined_weight_final = combined_weight_final.rename(
+            "iono_free_weight")
         combined_weight_final.attrs['units'] = 'unitless'
         combined_weight_final.attrs['long_name'] = 'Weight of ionosphere-free pseudo-range combination'
         combined_weight_final.attrs['formula'] = '1 / ( (alpha^2/SNR1_lin) + (beta^2/SNR5_lin) )'
@@ -253,22 +277,37 @@ def calculate_pseudo_ranges(obs_data: xr.Dataset) -> xr.Dataset:
     s2 = xr.full_like(c1, np.nan)
     f2 = xr.full_like(c1, np.nan)
 
-    where_c2l = (hasattr(obs_data, "C2L") and hasattr(obs_data, "S2L") and
-                 ~np.isnan(obs_data.C2L) & ~np.isnan(obs_data.S2L)) if hasattr(obs_data, "C2L") and hasattr(obs_data, "S2L") else np.nan
-    c2 = xr.where(where_c2l, obs_data.C2L, c2) if hasattr(obs_data, "C2L") else c2
-    s2 = xr.where(where_c2l, obs_data.S2L, s2) if hasattr(obs_data, "S2L") else s2
+    where_c2l = (
+        hasattr(obs_data, "C2L") and
+        hasattr(obs_data, "S2L") and
+        ~np.isnan(obs_data.C2L) & ~np.isnan(obs_data.S2L)
+    ) if hasattr(obs_data, "C2L") and hasattr(obs_data, "S2L") else np.nan
+    c2 = xr.where(where_c2l, obs_data.C2L, c2) if hasattr(
+        obs_data, "C2L") else c2
+    s2 = xr.where(where_c2l, obs_data.S2L, s2) if hasattr(
+        obs_data, "S2L") else s2
     f2 = xr.where(where_c2l, 1278.75, f2)
 
-    where_c2w = (hasattr(obs_data, "C2W") and hasattr(obs_data, "S2W") and
-                 ~np.isnan(obs_data.C2W) & ~np.isnan(obs_data.S2W)) if hasattr(obs_data, "C2W") and hasattr(obs_data, "S2W") else np.nan
-    c2 = xr.where(where_c2w, obs_data.C2W, c2) if hasattr(obs_data, "C2W") else c2
-    s2 = xr.where(where_c2w, obs_data.S2W, s2) if hasattr(obs_data, "S2W") else s2
+    where_c2w = (
+        hasattr(obs_data, "C2W") and
+        hasattr(obs_data, "S2W") and
+        ~np.isnan(obs_data.C2W) & ~np.isnan(obs_data.S2W)
+    ) if hasattr(obs_data, "C2W") and hasattr(obs_data, "S2W") else np.nan
+    c2 = xr.where(where_c2w, obs_data.C2W, c2) if hasattr(
+        obs_data, "C2W") else c2
+    s2 = xr.where(where_c2w, obs_data.S2W, s2) if hasattr(
+        obs_data, "S2W") else s2
     f2 = xr.where(where_c2w, 1278.75, f2)
 
-    where_c5q = (hasattr(obs_data, "C5Q") and hasattr(obs_data, "S5Q") and
-                 ~np.isnan(obs_data.C5Q) & ~np.isnan(obs_data.S5Q)) if hasattr(obs_data, "C5Q") and hasattr(obs_data, "S5Q") else np.nan
-    c2 = xr.where(where_c5q, obs_data.C5Q, c2) if hasattr(obs_data, "C5Q") else c2
-    s2 = xr.where(where_c5q, obs_data.S5Q, s2) if hasattr(obs_data, "S5Q") else s2
+    where_c5q = (
+        hasattr(obs_data, "C5Q") and
+        hasattr(obs_data, "S5Q") and
+        ~np.isnan(obs_data.C5Q) & ~np.isnan(obs_data.S5Q)
+    ) if hasattr(obs_data, "C5Q") and hasattr(obs_data, "S5Q") else np.nan
+    c2 = xr.where(where_c5q, obs_data.C5Q, c2) if hasattr(
+        obs_data, "C5Q") else c2
+    s2 = xr.where(where_c5q, obs_data.S5Q, s2) if hasattr(
+        obs_data, "S5Q") else s2
     f2 = xr.where(where_c5q, 1176.45, f2)
 
     ranges, weights = ionospheric_correction(c1=c1, c5=c2, s1=s1, s5=s2, f5=f2)

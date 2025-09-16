@@ -1,3 +1,8 @@
+"""
+Module for downloading GNSS data files.
+
+This module provides functions to download various types of GNSS data files from ESA
+"""
 import base64
 import gzip
 import io
@@ -24,6 +29,7 @@ def download_navigation_message(
         date: datetime,
         station: str
 ) -> Optional[TextIO]:
+    # pylint: disable=too-many-locals
     """
     Connects to the server, navigates to the directory based on the provided date,
     retrieves the Navigation message file for the specified observation station,
@@ -112,7 +118,10 @@ def download_navigation_message(
     except FileNotFoundError:
         logger.error("File not found: %s", full_path)
         return None
-    except Exception as e:
+    except PermissionError:
+        logger.error("Permission denied when accessing %s", full_path)
+        return None
+    except IOError as e:
         logger.error("Error accessing %s: %s", full_path, e)
         return None
     finally:
@@ -173,7 +182,7 @@ def load_cached_navigation_message(date: datetime, station: str) -> xr.Dataset:
                 station)
 
             # Save the dataset to cache as original rinex file
-            with open(cache_file_txt, "w") as fd:
+            with open(cache_file_txt, "w", encoding="utf-8") as fd:
                 file_content.seek(0)
                 shutil.copyfileobj(file_content, fd)
             logger.info("Saved txt to cache at %s", cache_file_txt)
@@ -190,9 +199,6 @@ def load_cached_navigation_message(date: datetime, station: str) -> xr.Dataset:
                 "Failed to download ephemeris message for %s on %s",
                 station,
                 date.strftime('%Y-%m-%d'))
-            raise FileNotFoundError(
-                "No file found for %s on %s",
-                station,
-                date.strftime('%Y-%m-%d'))
+            raise FileNotFoundError(f"No file found for {station} on {date.strftime('%Y-%m-%d')}")
 
     return ds

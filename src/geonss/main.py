@@ -1,16 +1,29 @@
-import pandas as pd
+"""
+This module contains the main entry point for the GNSS positioning program.
+"""
 import argparse
 import pathlib
+import pandas as pd
 from geonss.position import spp
 from geonss.parsing import load_cached, load_cached_antex
 from geonss.parsing.write import write_sp3_from_xarray
 from geonss.constellation import select_constellations
 
+
 def main():
+    # pylint: disable=too-many-branches
+    # pylint: disable=too-many-statements
+    """
+    Main function to run the single point positioning program for GNSS data.
+
+    This function parses command line arguments and runs the appropriate GNSS processing functions.
+    """
     parser = argparse.ArgumentParser(
-        description="A single point positioning program for GNSS data. Supports Galileo and GPS. Measurements must be dual frequency.",
-        epilog="Example: geonss --verbose --id WTZR00DEU --navigation-file tests/data/BRDC00IGS_R_20250980000_01D_MN.rnx --measurement-file " \
-               "tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx --output-file output.sp3"
+        description="A single point positioning program for GNSS data. "
+            "Supports Galileo and GPS. Measurements must be dual frequency.",
+        epilog="Example: geonss --verbose --id WTZR00DEU --"
+            "navigation-file tests/data/BRDC00IGS_R_20250980000_01D_MN.rnx --measurement-file "
+            "tests/data/WTZR00DEU_R_20250980000_01D_30S_MO.crx --output-file output.sp3"
     )
     # --- Required Arguments ---
     parser.add_argument(
@@ -123,26 +136,30 @@ def main():
             time_limit = args.tlim.strip("()").split(",")
 
             if len(time_limit) != 2:
-                raise ValueError("Invalid time limit format. Use (YYYY-MM-DDTHH:MM:SS,YYYY-MM-DDTHH:MM:SS)")
+                raise ValueError(
+                    "Invalid time limit format. Use (YYYY-MM-DDTHH:MM:SS,YYYY-MM-DDTHH:MM:SS)")
 
             start_str, end_str = time_limit
 
             start = pd.to_datetime(start_str)
             end = pd.to_datetime(end_str)
         except ValueError:
-            print("Error: Invalid time limit format. Use (YYYY-MM-DDTHH:MM:SS,YYYY-MM-DDTHH:MM:SS)")
+            print(
+                "Error: Invalid time limit format. Use (YYYY-MM-DDTHH:MM:SS,YYYY-MM-DDTHH:MM:SS)")
             return
 
     try:
         # Load the observation data
         if args.tlim:
-            observation = load_cached(args.observation, tlim=(start, end), use=["G", "E"])
+            observation = load_cached(
+                args.observation, tlim=(start, end), use=["G", "E"])
         else:
             observation = load_cached(args.observation, use=["G", "E"])
 
         # Load the navigation data
         if args.navigation and args.tlim:
-            navigation = load_cached(args.navigation, tlim=(start, end), use=["G", "E"])
+            navigation = load_cached(
+                args.navigation, tlim=(start, end), use=["G", "E"])
         elif args.navigation:
             navigation = load_cached(args.navigation, use=["G", "E"])
         else:
@@ -162,19 +179,28 @@ def main():
         else:
             antex_data = None
 
-        observation = select_constellations(observation, galileo=(not args.disable_galileo), gps=(not args.disable_gps))
-        navigation = select_constellations(navigation, galileo=(not args.disable_galileo), gps=(not args.disable_gps))
+        observation = select_constellations(
+            observation,
+            gps=not args.disable_gps,
+            galileo=not args.disable_galileo,
+        )
+
+        navigation = select_constellations(
+            navigation,
+            gps=not args.disable_gps,
+            galileo=not args.disable_galileo,
+        )
 
         result = spp(
             observation,
             navigation=navigation,
             sp3=sp3_data,
             antex=antex_data,
-            enable_signal_travel_time_correction = not args.disable_signal_travel_time_correction,
-            enable_earth_rotation_correction= not args.disable_earth_rotation_correction,
-            enable_tropospheric_correction = not args.disable_tropospheric_correction,
-            enable_elevation_weighting = not args.disable_elevation_weighting,
-            enable_snr_weighting = not args.disable_snr_weighting
+            enable_signal_travel_time_correction=not args.disable_signal_travel_time_correction,
+            enable_earth_rotation_correction=not args.disable_earth_rotation_correction,
+            enable_tropospheric_correction=not args.disable_tropospheric_correction,
+            enable_elevation_weighting=not args.disable_elevation_weighting,
+            enable_snr_weighting=not args.disable_snr_weighting
         )
 
         # Add the satellite ID as a coordinate to the result

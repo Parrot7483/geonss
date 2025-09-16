@@ -26,6 +26,7 @@ dependencies = [
 dev = [
     "autopep8==2.3.2",
     "pytest==8.4.2",
+	"pylint==3.3.8",
 ]
 
 [project.scripts]
@@ -46,15 +47,7 @@ pythonpath = [".", "src"]
 
 [tool.pylint]
 max-line-length = 120
+ignore-paths = '^src/geonss/plotting/.*$'
 disable = [
-    "raw-checker-failed",
-    "bad-inline-option",
-    "locally-disabled",
-    "file-ignored",
-    "suppressed-message",
-    "useless-suppression",
-    "deprecated-pragma",
-    "use-symbolic-message-instead",
-    "use-implicit-booleaness-not-comparison-to-string",
-    "use-implicit-booleaness-not-comparison-to-zero"
+    "fixme"
 ]

@@ -25,6 +25,10 @@ jobs:
         run: |
           pip install .[dev]
 
+      - name: Run pylint
+        run: |
+          pylint src/ --fail-under=0 --exit-zero
+
       - name: Run tests with pytest
         run: |
           pytest

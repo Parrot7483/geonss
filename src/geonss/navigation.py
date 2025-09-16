@@ -65,6 +65,8 @@ def satellite_position_velocity_clock_correction(
         ephemeris: xr.Dataset,
         dt: np.datetime64
 ) -> Tuple[np.float64, np.float64, np.float64, np.float64, np.float64, np.float64, np.float64]:
+    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-statements
     """
     Function to compute satellite position (ECEF), velocity (ECEF),
     and clock correction using individual ephemeris parameters.
@@ -220,6 +222,7 @@ def calculate_satellite_positions(
         nav_data: xr.Dataset,
         ranges: xr.Dataset
 ) -> xr.Dataset:
+    # pylint: disable=too-many-locals
     """
     Calculate observable positions, velocities, and clock biases for each observation.
 
@@ -237,8 +240,8 @@ def calculate_satellite_positions(
         Includes ECEF coordinate for position and velocity.
     """
     logger.info(
-        f"Starting to compute observable states for {len(ranges.sv.values)} observables "
-        f"across {len(ranges.time.values)} time steps."
+        "Starting to compute observable states for %d observables "
+        "across %d time steps.", len(ranges.sv.values), len(ranges.time.values)
     )
 
     # Define ECEF coordinates
@@ -297,6 +300,6 @@ def calculate_satellite_positions(
 
             result['clock'].loc[dt, satellite] = clock_bias
 
-        logger.info(f"Finished computing positions for {satellite}")
+        logger.info("Finished computing positions for %s", satellite)
 
     return result

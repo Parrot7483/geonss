@@ -1,12 +1,22 @@
-import logging
-import pathlib
-from datetime import datetime
+"""
+Module for parallel loading of RINEX observation files.
 
+This module provides functions to load RINEX observation files in parallel by splitting
+the time range and processing chunks separately.
+"""
+from datetime import datetime
+import logging
+import multiprocessing
+import pathlib
+
+from georinex.obs2 import obstime2
+from georinex.obs3 import obstime3
+from georinex.rio import rinexinfo
+import georinex as gr
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-import georinex as gr
 from .util import split_time_range
 
 logger = logging.getLogger(__name__)
@@ -29,7 +39,7 @@ def _load_period(args):
         end_dt = end
 
     if verbose:
-        logger.info(f"Loading period: {start_dt} to {end_dt}")
+        logger.info("Loading period: %s to %s", start_dt, end_dt)
 
     result = gr.load(path, use=use, tlim=(start_dt, end_dt), fast=True)
 
@@ -43,6 +53,8 @@ def load_parallel(
         tlim: tuple[datetime, datetime] | None = None,
         verbose: bool = False
 ) -> xr.Dataset:
+    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-branches
     """
     Load a RINEX observation file in parallel by splitting the time range and processing chunks separately.
 
@@ -57,11 +69,6 @@ def load_parallel(
     Returns:
         xr.Dataset: The combined dataset from all time chunks
     """
-    from georinex.obs3 import obstime3
-    from georinex.obs2 import obstime2
-    from georinex.rio import rinexinfo
-    import multiprocessing
-
     path = pathlib.Path(rinex_path)
 
     if not processes:
@@ -72,7 +79,8 @@ def load_parallel(
     version = info["version"]
 
     if rinex_type != "obs":
-        raise ValueError("Only observation files are supported for parallel loading.")
+        raise ValueError(
+            "Only observation files are supported for parallel loading.")
 
     major_version = int(version)
 
@@ -80,7 +88,8 @@ def load_parallel(
         start_time = tlim[0]
         end_time = tlim[1]
         if verbose:
-            logger.info(f"Using specified time limits: {start_time} to {end_time}")
+            logger.info("Using specified time limits: %s to %s",
+                        start_time, end_time)
     else:
         # Get file time range
         if major_version == 3:
@@ -94,7 +103,7 @@ def load_parallel(
         start_time = times[0]
         end_time = times[-1]
         if verbose:
-            logger.info(f"File time range: {start_time} to {end_time}")
+            logger.info("File time range: %s to %s", start_time, end_time)
 
     # Split time range into periods
     # Subtract 1 microsecond to avoid overlap
@@ -102,16 +111,21 @@ def load_parallel(
     periods = []
     for i in range(len(timestamps) - 1):
         if i == len(timestamps) - 2:  # Last period
-            periods.append((timestamps[i], timestamps[i + 1]))  # Use exact end time
+            # Use exact end time
+            periods.append((timestamps[i], timestamps[i + 1]))
         else:
-            periods.append((timestamps[i], timestamps[i + 1] - np.timedelta64(1, "us")))  # Avoid overlap
+            # Avoid overlap
+            periods.append(
+                (timestamps[i], timestamps[i + 1] - np.timedelta64(1, "us")))
 
     if verbose:
-        logger.info(f"Processing file {path} with {processes} processes")
-        logger.info(f"Split into {len(periods)} time periods")
+        logger.info("Processing file %s with %s processes", path, processes)
+        logger.info("Split into %s time periods", len(periods))
 
     # Prepare arguments for the worker function
-    args_list = [(period[0], period[1], path, use, verbose) for period in periods]
+    args_list = [
+        (period[0], period[1], path, use, verbose) for period in periods
+    ]
 
     # Use multiprocessing to load all periods
     with multiprocessing.Pool(processes=processes) as pool:
@@ -125,8 +139,8 @@ def load_parallel(
         )
 
         if verbose:
-            logger.info(f"Successfully combined {len(results)} datasets")
+            logger.info("Successfully combined %s datasets", len(results))
 
         return combined_ds
-    else:
-        raise ValueError("No data was loaded from the RINEX file")
+
+    raise ValueError("No data was loaded from the RINEX file")

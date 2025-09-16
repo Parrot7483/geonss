@@ -1,11 +1,19 @@
+"""
+Module for GNSS position estimation.
+
+This module provides functions for estimating positions using GNSS data. It includes
+functions for processing raw GNSS measurements, applying corrections, and
+calculating positions using various algorithms.
+"""
+import logging
+
 import xarray as xr
 import numpy as np
-import logging
 
 from geonss.constants import SPEED_OF_LIGHT, OMEGA_E
 from geonss.algorithms import iterative_reweighted_least_squares, huber_weight
 from geonss.coordinates import ECEFPosition
-from geonss.interpolation import interpolate_orbit_positions
+from geonss.interpolation import interpolate_orbit_positions, interpolate_orbit_positions_with_antex_correction
 from geonss.navigation import calculate_satellite_positions
 from geonss.ranges import tropospheric_delay, calculate_pseudo_ranges
 
@@ -37,7 +45,10 @@ def build_positioning_model(
         enable_tropospheric_correction: bool = True,
         enable_elevation_weighting: bool = True,
         enable_snr_weighting: bool = True,
-) -> (np.ndarray, np.ndarray, np.ndarray):
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
+    # pylint: disable=too-many-locals
     """
     Build geometry matrix, residuals vector and weights for GNSS positioning.
 
@@ -61,7 +72,8 @@ def build_positioning_model(
 
     # Filter to valid satellites and align datasets
     ranges = ranges.dropna(dim="sv", subset=["pseudo_range"])
-    ranges, satellites = xr.align(ranges, satellites, join="inner", exclude=["time"])
+    ranges, satellites = xr.align(
+        ranges, satellites, join="inner", exclude=["time"])
 
     # Extract data for valid satellites
     satellite_ranges = ranges.pseudo_range.values
@@ -78,7 +90,8 @@ def build_positioning_model(
     # Apply signal travel time correction if enabled
     if enable_signal_travel_time_correction:
         signal_travel_times = satellite_ranges / SPEED_OF_LIGHT
-        satellite_positions -= (satellite_velocities * signal_travel_times[:, np.newaxis])
+        satellite_positions -= (satellite_velocities *
+                                signal_travel_times[:, np.newaxis])
 
     # Apply Earth rotation correction if enabled
     if enable_earth_rotation_correction:
@@ -91,9 +104,12 @@ def build_positioning_model(
         # [ cos(theta), sin(theta), 0]
         # [-sin(theta), cos(theta), 0]
         # [          0,          0, 1]
-        rotated_x = cos_thetas * satellite_positions[:, 0] + sin_thetas * satellite_positions[:, 1]
-        rotated_y = -sin_thetas * satellite_positions[:, 0] + cos_thetas * satellite_positions[:, 1]
-        satellite_positions = np.column_stack([rotated_x, rotated_y, satellite_positions[:, 2]])
+        rotated_x = cos_thetas * \
+            satellite_positions[:, 0] + sin_thetas * satellite_positions[:, 1]
+        rotated_y = -sin_thetas * \
+            satellite_positions[:, 0] + cos_thetas * satellite_positions[:, 1]
+        satellite_positions = np.column_stack(
+            [rotated_x, rotated_y, satellite_positions[:, 2]])
 
     # Calculate elevation angles (needed for troposphere and weighting)
     elevation_angles = receiver_pos.elevation_angle(satellite_positions)
@@ -124,11 +140,11 @@ def build_positioning_model(
     # Residual = Observed Pseudo Range - Modeled Pseudo Range
     # Modeled Pseudo Range = Geometric Range + Receiver Clock Bias - Satellite Clock Bias + Tropo Delay + ISB
     residuals = (
-            satellite_ranges
-            - geometric_ranges
-            - clock_bias
-            + satellite_clock_biases_m
-            - tropospheric_corrections
+        satellite_ranges
+        - geometric_ranges
+        - clock_bias
+        + satellite_clock_biases_m
+        - tropospheric_corrections
     )
 
     # Initialize Weights
@@ -174,6 +190,9 @@ def spp(
         enable_elevation_weighting: bool = True,
         enable_snr_weighting: bool = True,
 ) -> xr.Dataset:
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
+    # pylint: disable=too-many-locals
     """
     Compute receiver positions for each time step in the observation data
     using iterative least squares method
@@ -202,18 +221,22 @@ def spp(
 
     # Calculate pseudo ranges
     if sp3 and antex:
-        logger.info("Selecting common satellites between observation and sp3 data")
+        logger.info(
+            "Selecting common satellites between observation and sp3 data")
         observation, sp3 = xr.align(observation, sp3, exclude='time')
 
         logger.info("Calculating pseudo ranges")
         ranges = calculate_pseudo_ranges(observation)
 
         logger.info("Interpolating satellite positions")
-        sat_pos = interpolate_orbit_positions(sp3, ranges, antex)
+        sat_pos = interpolate_orbit_positions_with_antex_correction(
+            sp3, ranges, antex)
 
     elif navigation:
-        logger.info("Selecting common satellites between observation and navigation data")
-        observation, navigation = xr.align(observation, navigation, exclude='time')
+        logger.info(
+            "Selecting common satellites between observation and navigation data")
+        observation, navigation = xr.align(
+            observation, navigation, exclude='time')
 
         logger.info("Calculating pseudo ranges")
         ranges = calculate_pseudo_ranges(observation)
@@ -222,15 +245,17 @@ def spp(
         sat_pos = calculate_satellite_positions(navigation, ranges)
 
     else:
-        raise ValueError("Either navigation or sp3 + antex data must be provided")
+        raise ValueError(
+            "Either navigation or sp3 + antex data must be provided")
 
     # Compute position for each time step
     logger.info(
-        f"Computing receiver positions for {len(observation.time.values)} time steps"
+        "Computing receiver positions for %d time steps", len(observation.time.values)
     )
 
     # Create initial parameter vector (position and clock bias)
-    initial_state = np.array([*a_priori_position.array, a_priori_clock_bias], dtype=np.float64)
+    initial_state = np.array(
+        [*a_priori_position.array, a_priori_clock_bias], dtype=np.float64)
 
     # Prepare output arrays
     times = observation.time.values
@@ -279,12 +304,10 @@ def spp(
         positions[i, :] = final_state[:3]
         clock_biases[i] = np.float64(final_state[3])
         successful_computations += 1
-        logger.debug(f"Successfully computed position for time {t}")
+        logger.debug("Successfully computed position for time %s", t)
 
     logger.info(
-        f"Successfully computed "
-        f"{successful_computations} positions out of "
-        f"{n_times} time steps"
+        "Successfully computed %d positions out of %d time steps", successful_computations, n_times
     )
 
     # Convert positions from meter to km

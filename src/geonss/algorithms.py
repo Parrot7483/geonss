@@ -18,6 +18,7 @@ def weighted_least_squares(
         weights: Optional[np.ndarray] = None,
         damping_factor: np.float64 = np.float64(0.0)
 ) -> np.ndarray:
+    # pylint: disable=invalid-name
     """
     Solve a general weighted least squares problem using np.linalg.lstsq
 
@@ -89,6 +90,11 @@ def iterative_reweighted_least_squares(
         sigma_epsilon: float = 1e-10,
         **kwargs
 ) -> np.ndarray:
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
+    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-statements
+    # pylint: disable=too-many-branches
     """
     General Iterative Reweighted Least Squares (IRLS) solver with robust loss functions.
 
@@ -114,12 +120,12 @@ def iterative_reweighted_least_squares(
                     model function errors, or WLS solver errors.
     """
     state = initial_state.astype(np.float64, copy=True)
-    previous_residuals: Optional[np.ndarray] = None
-    previous_apriori_weights: Optional[np.ndarray] = None
+    previous_residuals = np.empty(0, dtype=float)
+    previous_apriori_weights = np.empty(0, dtype=float)
     converged = False
 
     for iteration in range(max_iterations):
-        logger.debug(f"IRLS Iteration {iteration + 1}, Current State: {state}")
+        logger.debug("IRLS Iteration %d, Current State: %s", iteration + 1, state)
 
         # 1. Build model for current state (H, r, W_apriori)
         geometry_matrix, current_residuals, current_apriori_weights = model_fn(state, **kwargs)
@@ -127,9 +133,9 @@ def iterative_reweighted_least_squares(
         # 2. Calculate final weights for this iteration's WLS
         weights = current_apriori_weights.copy()  # Start with a priori weights
 
-        if iteration > 0 and previous_residuals is not None and previous_apriori_weights is not None:
+        if iteration > 0 and previous_residuals.size > 0 and previous_apriori_weights.size > 0:
             # Check for dimension mismatch
-            if len(previous_residuals) == len(current_apriori_weights):
+            if previous_residuals.size == current_apriori_weights.size:
                 # Calculate standard deviations (sigma) from PREVIOUS a priori weights
                 valid_prev_weights_mask = previous_apriori_weights > weight_epsilon
                 sigma = np.full_like(previous_apriori_weights, np.inf)
@@ -146,17 +152,27 @@ def iterative_reweighted_least_squares(
                     robust_weights_factor = loss_fn(standardized_residuals)
                     robust_weights_factor[~np.isfinite(robust_weights_factor)] = 0.0
                     robust_weights_factor = np.maximum(robust_weights_factor, 0.0)
-                except Exception as e:
-                    logger.warning(f"Error in loss_fn during iteration {iteration + 1}: {e}. Using a priori weights.",
-                                   exc_info=True)
+                except ValueError as e:
+                    logger.warning(
+                        "Error in loss_fn during iteration %d: %s." \
+                        "Using a priori weights.", iteration + 1, e, exc_info=True
+                    )
+                    robust_weights_factor = np.ones_like(standardized_residuals)  # Fallback
+                except TypeError as e:
+                    logger.warning(
+                        "Error in loss_fn during iteration %d: %s." \
+                        "Using a priori weights.", iteration + 1, e, exc_info=True
+                    )
                     robust_weights_factor = np.ones_like(standardized_residuals)  # Fallback
 
                 # Apply robust factor to CURRENT a priori weights
                 weights *= robust_weights_factor
-                logger.debug(f"Applied robust weighting. Min/Max factor: "
-                             f"{np.min(robust_weights_factor):.3f}/{np.max(robust_weights_factor):.3f}")
+                logger.debug(
+                    "Applied robust weighting. Min/Max factor: %.3f/%.3f", 
+                    np.min(robust_weights_factor), np.max(robust_weights_factor)
+                )
             else:
-                logger.warning(f"Measurement count mismatch iteration {iteration + 1}. Using only a priori weights.")
+                logger.warning("Measurement count mismatch iteration %d. Using only a priori weights.", iteration + 1)
                 # 'weights' already holds current_apriori_weights
         else:
             logger.debug("First iteration, using only a priori weights.")
@@ -173,15 +189,14 @@ def iterative_reweighted_least_squares(
             if not np.all(np.isfinite(state_update)):
                 raise ValueError("WLS solver returned non-finite state update.")
         except np.linalg.LinAlgError as e:
-            logger.error(f"WLS failed in iteration {iteration + 1}: {e}", exc_info=True)
+            logger.error("WLS failed in iteration %d: %s", iteration + 1, e, exc_info=True)
             raise ValueError(f"Linear algebra error during WLS solution: {e}") from e
         except Exception as e:
-            logger.error(f"Unexpected error in WLS call: {e}", exc_info=True)
-            raise ValueError(f"Unexpected error during WLS solution") from e
+            raise ValueError("Unexpected error during WLS solution") from e
 
         # 4. Update state
         state += state_update
-        logger.debug(f"State update norm: {np.linalg.norm(state_update):.4g}")
+        logger.debug("State update norm: %.4g", np.linalg.norm(state_update))
 
         # 5. Store results for next iteration
         previous_residuals = current_residuals.copy()
@@ -190,17 +205,19 @@ def iterative_reweighted_least_squares(
         # 6. Check for convergence
         try:
             if convergence_fn(state_update):
-                logger.debug(f"Converged after {iteration + 1} iterations.")
+                logger.debug("Converged after %d iterations.", iteration + 1)
                 converged = True
                 break
-        except Exception as e:
-            logger.warning(f"Convergence check failed in iteration {iteration + 1}: {e}", exc_info=True)
+        except ValueError as e:
+            logger.warning("Convergence check failed in iteration %d: %s", iteration + 1, e, exc_info=True)
+        except TypeError as e:
+            logger.warning("Convergence check failed in iteration %d: %s", iteration + 1, e, exc_info=True)
 
     # End of loop
     if not converged:
-        logger.debug(f"Reached maximum iterations ({max_iterations}) without convergence.")
+        logger.debug("Reached maximum iterations (%d) without convergence.", max_iterations)
 
-    logger.debug(f"Final IRLS State: {state}")
+    logger.debug("Final IRLS State: %s", state)
     return state
 
 

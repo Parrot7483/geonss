@@ -1,3 +1,6 @@
+"""
+Module for caching downloaded files.
+"""
 import logging
 import os
 from datetime import datetime
@@ -18,6 +21,7 @@ def load_cached(
         meas: list[str] | None = None,
         verbose: bool = False
 ) -> xr.Dataset:
+    # pylint: disable=too-many-locals
     """
     Load a rinex file and return a xarray Dataset. The processed dataset is cached.
 
@@ -84,12 +88,10 @@ def load_cached(
         ds = xr.open_dataset(cache_file)
     else:
         logger.info("Processing rinex file from %s", rinex_path)
-        """ 
-        TODO: Because of a bug in georinex we can not pass meas to gr.load.
-        Our observation files contain lines with only phase measurements.
-        This causes gr.load to fail with a ValueError.
-        Instead we need to filter the dataset after loading.
-        """
+        # TODO: Because of a bug in georinex we can not pass meas to gr.load.
+        # Our observation files contain lines with only phase measurements.
+        # This causes gr.load to fail with a ValueError.
+        # Instead we need to filter the dataset after loading.
         ds = gr.load(rinex_path, use=use, tlim=tlim, verbose=verbose)
 
         if meas:

@@ -115,7 +115,7 @@ def datetime_utc_to_datetime_gps(dt: Union[np.datetime64, datetime.datetime, str
     ]
 
     # Convert input to numpy.datetime64 if it's not already
-    if isinstance(dt, str) or isinstance(dt, datetime.datetime):
+    if isinstance(dt, (datetime.datetime, str)):
         dt = np.datetime64(dt)
 
     # GPS time epoch
@@ -171,7 +171,7 @@ def datetime_to_day_of_year(dt: Union[np.datetime64, datetime.datetime]) -> int:
         int: Day of the year (1-366)
     """
     # Convert input to numpy.datetime64 if it's not already
-    if isinstance(dt, str) or isinstance(dt, datetime.datetime):
+    if isinstance(dt, (datetime.datetime, str)):
         dt = np.datetime64(dt)
 
     # Get the start of the year
