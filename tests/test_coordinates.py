@@ -1,8 +1,10 @@
 import pytest
+import xarray as xr
 import numpy as np
 
-from geonss.coordinates import ECEFPosition, LLAPosition
+from geonss.coordinates import ECEFPosition, LLAPosition, lla_to_ecef, ecef_to_lla
 
+# x, y, z, lat, lon, alt
 TEST_POSITIONS = [
     (6378137.0, 0.0, 0.0, 0.0, 0.0, 0.0),  # equator at prime meridian
     (4510023.92, 4510023.92, 0.0, 0.0, 45.0, 0),  # point on the equator at 45 degree
@@ -10,6 +12,97 @@ TEST_POSITIONS = [
     (318977.27, 5635056.79, 2979456.01, 27.9881201, 86.7601802, 8764.80),  # point on Mount Everest
     (1542852.54, -4630972.86, -4092557.07, -40.1670188, -71.5740163, 593.00), # point in Patagonia
 ]
+
+LLA_DA = xr.DataArray(
+    np.array([[pos[3], pos[4], pos[5]] for pos in TEST_POSITIONS]),
+    dims=['point', 'coordinate'],
+    coords={
+        'point': range(len(TEST_POSITIONS)),
+        'coordinate': ['latitude', 'longitude', 'altitude']
+    },
+    attrs={
+        'units': 'degrees/meters',
+        'long_name': 'LLA coordinates'
+    }
+)
+
+ECEF_DA = xr.DataArray(
+    np.array([[pos[0], pos[1], pos[2]] for pos in TEST_POSITIONS]),
+    dims=['point', 'coordinate'],
+    coords={
+        'point': range(len(TEST_POSITIONS)),
+        'coordinate': ['x', 'y', 'z']
+    },
+    attrs={
+        'units': 'meters',
+        'long_name': 'ECEF coordinates'
+    }
+)
+
+def test_lla_to_ecef():
+    """Test the lla_to_ecef function using known test vectors with DataArray."""
+
+    # Call the function to test
+    result_ecef_da = lla_to_ecef(LLA_DA)
+
+    # 1 cm tolerance
+    tolerance = 1e-2
+
+    np.testing.assert_allclose(
+        result_ecef_da.sel(coordinate='x').values,
+        ECEF_DA.sel(coordinate='x').values,
+        atol=tolerance, rtol=1e-6,
+        err_msg="ECEF X coordinates don't match expected values"
+    )
+
+    np.testing.assert_allclose(
+        result_ecef_da.sel(coordinate='y').values,
+        ECEF_DA.sel(coordinate='y').values,
+        atol=tolerance, rtol=1e-6,
+        err_msg="ECEF Y coordinates don't match expected values"
+    )
+
+    np.testing.assert_allclose(
+        result_ecef_da.sel(coordinate='z').values,
+        ECEF_DA.sel(coordinate='z').values,
+        atol=tolerance, rtol=1e-6,
+        err_msg="ECEF Z coordinates don't match expected values"
+    )
+
+    # Check that coordinate system attribute is set correctly
+    assert result_ecef_da.attrs.get('coordinate_system') == 'ECEF'
+
+def test_ecef_to_lla():
+    """Test the lla_to_ecef function using known test vectors with DataArray."""
+    # Call the function to test
+    result_lla_da = ecef_to_lla(ECEF_DA)
+
+    # 1 cm tolerance
+    tolerance = 1e-2
+
+    np.testing.assert_allclose(
+        result_lla_da.sel(coordinate='latitude').values,
+        LLA_DA.sel(coordinate='latitude').values,
+        atol=tolerance, rtol=1e-6,
+        err_msg="ECEF X coordinates don't match expected values"
+    )
+
+    np.testing.assert_allclose(
+        result_lla_da.sel(coordinate='longitude').values,
+        LLA_DA.sel(coordinate='longitude').values,
+        atol=tolerance, rtol=1e-6,
+        err_msg="ECEF Y coordinates don't match expected values"
+    )
+
+    np.testing.assert_allclose(
+        result_lla_da.sel(coordinate='altitude').values,
+        LLA_DA.sel(coordinate='altitude').values,
+        atol=tolerance, rtol=1e-6,
+        err_msg="ECEF Z coordinates don't match expected values"
+    )
+
+    # Check that coordinate system attribute is set correctly
+    assert result_lla_da.attrs.get('coordinate_system') == 'LLA'
 
 @pytest.mark.parametrize("x,y,z,lat,lon,alt", TEST_POSITIONS)
 def test_ecef_to_lla_coordinates(x, y, z, lat, lon, alt):
