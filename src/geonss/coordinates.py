@@ -16,9 +16,232 @@ parameters for accurate positioning and navigation applications.
 
 from typing import List, Any, Self
 
+import xarray as xr
 import numpy as np
 
 from geonss.constants import EARTH_SEMI_MAJOR_AXIS, EARTH_SEMI_MINOR_AXIS, EARTH_ECCENTRICITY_SQUARED
+
+def lla_to_ecef(
+        da: xr.DataArray,
+        coord_dim: str = 'coordinate',
+        keep_attrs: bool = False
+) -> xr.DataArray:
+    """
+    Convert LLA coordinates in a xarray DataArray to ECEF coordinates.
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        Input DataArray containing LLA coordinates with shape (..., 3)
+        where the last dimension contains [latitude, longitude, altitude]
+        - latitude in degrees
+        - longitude in degrees
+        - altitude in meters
+    coord_dim : str, default 'coordinate'
+        Name of the coordinate dimension (should have size 3 for lat, lon, alt)
+    keep_attrs : bool, default False
+        Whether to keep variable attributes from input DataArray
+
+    Returns
+    -------
+    xr.DataArray
+        DataArray with ECEF coordinates [x, y, z] in meters along the coordinate dimension
+
+    Raises
+    ------
+    ValueError
+        If coordinate dimension doesn't have size 3
+    """
+
+    # Check that coordinate dimension exists and has size 3
+    if coord_dim not in da.dims:
+        raise ValueError(
+            f"Coordinate dimension '{coord_dim}' not found in DataArray. Available dimensions: {list(da.dims)}"
+        )
+
+    if da.sizes[coord_dim] != 3:
+        raise ValueError(
+            f"Coordinate dimension '{coord_dim}' must have size 3 (lat, lon, alt), got {da.sizes[coord_dim]}"
+        )
+
+    # Extract LLA coordinates
+    lat_rad = np.radians(da.isel({coord_dim: 0}))  # latitude in radians
+    lon_rad = np.radians(da.isel({coord_dim: 1}))  # longitude in radians
+    alt = da.isel({coord_dim: 2})                  # altitude in meters
+
+    # Calculate prime vertical radius
+    n = EARTH_SEMI_MAJOR_AXIS / np.sqrt(1 - EARTH_ECCENTRICITY_SQUARED * np.sin(lat_rad) ** 2)
+
+    # Calculate ECEF coordinates
+    ecef_x = (n + alt) * np.cos(lat_rad) * np.cos(lon_rad)
+    ecef_y = (n + alt) * np.cos(lat_rad) * np.sin(lon_rad)
+    ecef_z = (n * (1 - EARTH_ECCENTRICITY_SQUARED) + alt) * np.sin(lat_rad)
+
+    # Stack the results back into a DataArray
+    ecef_coords = np.stack([ecef_x.values, ecef_y.values, ecef_z.values], axis=-1)
+
+    # Create new coordinate labels for ECEF
+    coord_labels = ['x', 'y', 'z']
+
+    # Create the result DataArray with same dimensions as input
+    result_coords = da.coords.copy()
+    result_coords[coord_dim] = coord_labels
+
+    ecef_da = xr.DataArray(
+        ecef_coords,
+        dims=da.dims,
+        coords=result_coords,
+        attrs={
+            'long_name': 'ECEF coordinates',
+            'units': 'm',
+            'coordinate_system': 'ECEF'
+        }
+    )
+
+    # Set attributes
+    if keep_attrs:
+        ecef_da.attrs = da.attrs.copy()
+
+    ecef_da.attrs.update({
+        'coordinate_system': 'ECEF',
+        'units': 'm',
+        'long_name': 'ECEF coordinates'
+    })
+
+    return ecef_da
+
+def ecef_to_lla(
+        da: xr.DataArray,
+        coord_dim: str = 'coordinate',
+        keep_attrs: bool = False
+) -> xr.DataArray:
+    # pylint: disable=too-many-locals
+    """
+    Convert ECEF coordinates in a xarray DataArray to LLA coordinates.
+
+    This function uses a vectorized implementation of the Ferrari/Heikkinen solution
+    to convert Earth-Centered, Earth-Fixed (ECEF) coordinates (X, Y, Z)
+    to Geodetic coordinates (Latitude, Longitude, Altitude).
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        Input DataArray containing ECEF coordinates with shape (..., 3)
+        where the last dimension contains [x, y, z] in meters
+    coord_dim : str, default 'coordinate'
+        Name of the coordinate dimension (should have size 3 for x, y, z)
+    keep_attrs : bool, default False
+        Whether to keep variable attributes from input DataArray
+
+    Returns
+    -------
+    xr.DataArray
+        DataArray with LLA coordinates [latitude, longitude, altitude] along the coordinate dimension
+        - latitude in degrees
+        - longitude in degrees
+        - altitude in meters
+
+    Raises
+    ------
+    ValueError
+        If coordinate dimension doesn't have size 3
+    """
+
+    # Check that coordinate dimension exists and has size 3
+    if coord_dim not in da.dims:
+        raise ValueError(
+            f"Coordinate dimension '{coord_dim}' not found in DataArray. Available dimensions: {list(da.dims)}"
+        )
+
+    if da.sizes[coord_dim] != 3:
+        raise ValueError(
+            f"Coordinate dimension '{coord_dim}' must have size 3 (x, y, z), got {da.sizes[coord_dim]}"
+        )
+
+    # Define derived geodetic parameters internally
+    eq_radius_sq = EARTH_SEMI_MAJOR_AXIS ** 2
+    polar_radius_sq = EARTH_SEMI_MINOR_AXIS ** 2
+    # Square of the first eccentricity (e^2)
+    e_sq = (eq_radius_sq - polar_radius_sq) / eq_radius_sq
+    # Square of the second eccentricity (e'^2)
+    e_prime_sq = (eq_radius_sq - polar_radius_sq) / polar_radius_sq
+
+    # Extract ECEF coordinates
+    x_ecef = da.isel({coord_dim: 0})  # x coordinate in meters
+    y_ecef = da.isel({coord_dim: 1})  # y coordinate in meters
+    z_ecef = da.isel({coord_dim: 2})  # z coordinate in meters
+
+    # Vectorized Ferrari/Heikkinen Solution
+    longitude_rad = np.arctan2(y_ecef, x_ecef)
+
+    p = np.sqrt(x_ecef ** 2 + y_ecef ** 2)
+    f = 54.0 * polar_radius_sq * z_ecef ** 2
+    g = p ** 2 + (1 - e_sq) * z_ecef ** 2 - e_sq * (eq_radius_sq - polar_radius_sq)
+    c = (e_sq ** 2 * f * p ** 2) / (g ** 3)
+    s = np.cbrt(1 + c + np.sqrt(c ** 2 + 2 * c))
+    k = s + 1 + 1 / s
+    p_formula = f / (3 * k ** 2 * g ** 2)
+    q = np.sqrt(1 + 2 * e_sq ** 2 * p_formula)
+
+    r0_term1 = (-p_formula * e_sq * p) / (1 + q)
+    r0_sqrt_term = (eq_radius_sq / 2) * (1 + 1 / q) - \
+                   (p_formula * (1 - e_sq) * z_ecef ** 2) / (q * (1 + q)) - \
+                   (p_formula * p ** 2) / 2
+    r0_sqrt_term = xr.where(r0_sqrt_term < 0, 0, r0_sqrt_term)
+    r0 = r0_term1 + np.sqrt(r0_sqrt_term)
+
+    u = np.sqrt((p - e_sq * r0) ** 2 + z_ecef ** 2)
+    v = np.sqrt((p - e_sq * r0) ** 2 + (1 - e_sq) * z_ecef ** 2)
+
+    z0 = (polar_radius_sq * z_ecef) / (EARTH_SEMI_MAJOR_AXIS * v)
+
+    latitude_rad = np.arctan((z_ecef + e_prime_sq * z0) / p)
+    altitude_m = u * (1 - polar_radius_sq / (EARTH_SEMI_MAJOR_AXIS * v))
+
+    # Handle edge case where p is zero (point is on the Z-axis)
+    on_z_axis = p == 0
+    lat_on_z_axis = np.pi / 2 * np.sign(z_ecef)
+    alt_on_z_axis = np.abs(z_ecef) - EARTH_SEMI_MINOR_AXIS
+
+    latitude_rad = xr.where(on_z_axis, lat_on_z_axis, latitude_rad)
+    altitude_m = xr.where(on_z_axis, alt_on_z_axis, altitude_m)
+
+    # Convert latitude and longitude to degrees
+    latitude_deg = np.degrees(latitude_rad)
+    longitude_deg = np.degrees(longitude_rad)
+
+    # Stack the results back into a DataArray
+    lla_coords = np.stack([latitude_deg.values, longitude_deg.values, altitude_m.values], axis=-1)
+
+    # Create new coordinate labels for LLA
+    coord_labels = ['latitude', 'longitude', 'altitude']
+
+    # Create the result DataArray with same dimensions as input
+    result_coords = da.coords.copy()
+    result_coords[coord_dim] = coord_labels
+
+    lla_da = xr.DataArray(
+        lla_coords,
+        dims=da.dims,
+        coords=result_coords,
+        attrs={
+            'long_name': 'LLA coordinates',
+            'coordinate_system': 'LLA',
+            'coordinate_system_description': 'Geodetic Latitude, Longitude, Altitude'
+        }
+    )
+
+    # Set attributes
+    if keep_attrs:
+        lla_da.attrs = da.attrs.copy()
+
+    lla_da.attrs.update({
+        'coordinate_system': 'LLA',
+        'coordinate_system_description': 'Geodetic Latitude, Longitude, Altitude',
+        'long_name': 'LLA coordinates'
+    })
+
+    return lla_da
 
 
 class ECEFPosition:
