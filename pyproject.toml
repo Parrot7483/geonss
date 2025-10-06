@@ -26,7 +26,7 @@ dependencies = [
 dev = [
     "autopep8==2.3.2",
     "pytest==8.4.2",
-	"pylint==3.3.8",
+	"pylint==3.3.9",
 ]
 
 [project.scripts]
