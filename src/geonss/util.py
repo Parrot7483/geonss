@@ -5,30 +5,7 @@ This module provides utility functions for handling and processing GNSS data.
 from pathlib import Path
 import numpy as np
 import xarray as xr
-from geonss.coordinates import ECEFPosition
-
-
-def distance(da1: xr.DataArray, da2: xr.DataArray):
-    """
-    Calculate the Euclidean distance between satellite positions in two datasets.
-
-    Args:
-        da1 (xr.DataArray): First dataset with 'ECEF' coordinate
-        da2 (xr.DataArray) Second dataset with 'ECEF' coordinate
-
-    Returns:
-        xr.DataArray: Euclidean distance between positions with dimensions (time, sv)
-    """
-    # Calculate the position differences along ECEF dimension
-    position_diff = da1 - da2
-
-    # Use np.linalg.norm to calculate the Euclidean distance along the ECEF dimension
-    return xr.apply_ufunc(
-        lambda x: np.linalg.norm(x, axis=-1),
-        position_diff,
-        input_core_dims=[['ECEF']],
-        vectorize=True
-    )
+from geonss.coordinates import ecef_distance, lla_distance, ecef_to_lla
 
 
 def drop_nan_vars(ds: xr.Dataset) -> xr.Dataset:
@@ -68,8 +45,32 @@ def get_project_output() -> Path:
 
     return path
 
+def lla_to_google_maps(position: xr.DataArray) -> str:
+    """Generate a Google Maps link for this position."""
+    lat = float(position.loc['latitude'].item())
+    lon = float(position.loc['longitude'].item())
+    alt = float(position.loc['altitude'].item())
 
-def print_distance_information(reference: ECEFPosition, positions: list[ECEFPosition]):
+    return f"https://www.google.com/maps?q={lat},{lon}&h={alt}"
+
+def ecef_to_std(position: xr.DataArray) -> str:
+    x = float(position.loc['x'].item())
+    y = float(position.loc['y'].item())
+    z = float(position.loc['z'].item())
+
+    return f"ECEF({float(x):.3f}, {float(y):.3f}, {float(z):.3f}) m"
+
+def lla_to_str(position: xr.DataArray) -> str:
+    lat = float(position.loc['latitude'].item())
+    lon = float(position.loc['longitude'].item())
+    alt = float(position.loc['altitude'].item())
+
+    lat_direction = "N" if lat >= 0 else "S"
+    lon_direction = "E" if lon >= 0 else "W"
+
+    return f"LLA({np.abs(lat):.6f}°{lat_direction}, {np.abs(lon):.6f}°{lon_direction}, {alt:.3f} m)"
+
+def print_distance_information(reference: xr.DataArray, positions: xr.DataArray):
     """
     Calculate the distance between a reference position and a list of positions.
 
@@ -80,11 +81,13 @@ def print_distance_information(reference: ECEFPosition, positions: list[ECEFPosi
     Returns:
         dict: A dictionary with the distances and their indices.
     """
-    distances = [reference.distance_to(pos) for pos in positions]
+    reference_lla = ecef_to_lla(reference, coord_dim='ECEF')
+    positions_lla = ecef_to_lla(positions, coord_dim='ECEF')
 
-    horizontal_distances, altitude_distances = zip(*[
-        reference.horizontal_and_altitude_distance_to(pos) for pos in positions
-    ])
+    distances = ecef_distance(reference, positions, coord_dim='ECEF')
+
+    horizontal_distances = lla_distance(reference_lla, positions_lla, coord_dim='ECEF')
+    altitude_distances = reference_lla.loc['altitude'] - positions_lla.sel({'ECEF': 'altitude'})
 
     mean_distance = np.mean(distances)
     mean_horizontal_distance = np.mean(horizontal_distances)
