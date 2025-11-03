@@ -19,7 +19,8 @@ from typing import List, Any, Self
 import xarray as xr
 import numpy as np
 
-from geonss.constants import EARTH_SEMI_MAJOR_AXIS, EARTH_SEMI_MINOR_AXIS, EARTH_ECCENTRICITY_SQUARED
+from geonss.constants import EARTH_SEMI_MAJOR_AXIS, EARTH_SEMI_MINOR_AXIS, EARTH_ECCENTRICITY_SQUARED, \
+                              EARTH_SEMI_MAJOR_AXIS_SQ, EARTH_SEMI_MINOR_AXIS_SQ, EARTH_MEAN_RADIUS
 
 def lla_to_ecef(
         da: xr.DataArray,
@@ -65,30 +66,27 @@ def lla_to_ecef(
         )
 
     # Extract LLA coordinates
-    lat_rad = np.radians(da.isel({coord_dim: 0}))  # latitude in radians
-    lon_rad = np.radians(da.isel({coord_dim: 1}))  # longitude in radians
-    alt = da.isel({coord_dim: 2})                  # altitude in meters
+    lat_rad = np.radians(da.sel({coord_dim: 'latitude'}))
+    lon_rad = np.radians(da.sel({coord_dim: 'longitude'}))
+    alt = da.sel({coord_dim: 'altitude'})
 
     # Calculate prime vertical radius
     n = EARTH_SEMI_MAJOR_AXIS / np.sqrt(1 - EARTH_ECCENTRICITY_SQUARED * np.sin(lat_rad) ** 2)
 
     # Calculate ECEF coordinates
-    ecef_x = (n + alt) * np.cos(lat_rad) * np.cos(lon_rad)
-    ecef_y = (n + alt) * np.cos(lat_rad) * np.sin(lon_rad)
-    ecef_z = (n * (1 - EARTH_ECCENTRICITY_SQUARED) + alt) * np.sin(lat_rad)
+    x = (n + alt) * np.cos(lat_rad) * np.cos(lon_rad)
+    y = (n + alt) * np.cos(lat_rad) * np.sin(lon_rad)
+    z = (n * (1 - EARTH_ECCENTRICITY_SQUARED) + alt) * np.sin(lat_rad)
 
     # Stack the results back into a DataArray
-    ecef_coords = np.stack([ecef_x.values, ecef_y.values, ecef_z.values], axis=-1)
-
-    # Create new coordinate labels for ECEF
-    coord_labels = ['x', 'y', 'z']
+    coords = np.stack([x.values, y.values, z.values], axis=-1)
 
     # Create the result DataArray with same dimensions as input
     result_coords = da.coords.copy()
-    result_coords[coord_dim] = coord_labels
+    result_coords[coord_dim] = ['x', 'y', 'z']
 
     ecef_da = xr.DataArray(
-        ecef_coords,
+        coords,
         dims=da.dims,
         coords=result_coords,
         attrs={
@@ -101,12 +99,6 @@ def lla_to_ecef(
     # Set attributes
     if keep_attrs:
         ecef_da.attrs = da.attrs.copy()
-
-    ecef_da.attrs.update({
-        'coordinate_system': 'ECEF',
-        'units': 'm',
-        'long_name': 'ECEF coordinates'
-    })
 
     return ecef_da
 
@@ -158,25 +150,23 @@ def ecef_to_lla(
             f"Coordinate dimension '{coord_dim}' must have size 3 (x, y, z), got {da.sizes[coord_dim]}"
         )
 
-    # Define derived geodetic parameters internally
-    eq_radius_sq = EARTH_SEMI_MAJOR_AXIS ** 2
-    polar_radius_sq = EARTH_SEMI_MINOR_AXIS ** 2
     # Square of the first eccentricity (e^2)
-    e_sq = (eq_radius_sq - polar_radius_sq) / eq_radius_sq
+    e_sq = (EARTH_SEMI_MAJOR_AXIS_SQ - EARTH_SEMI_MINOR_AXIS_SQ) / EARTH_SEMI_MAJOR_AXIS_SQ
+
     # Square of the second eccentricity (e'^2)
-    e_prime_sq = (eq_radius_sq - polar_radius_sq) / polar_radius_sq
+    e_prime_sq = (EARTH_SEMI_MAJOR_AXIS_SQ - EARTH_SEMI_MINOR_AXIS_SQ) / EARTH_SEMI_MINOR_AXIS_SQ
 
     # Extract ECEF coordinates
-    x_ecef = da.isel({coord_dim: 0})  # x coordinate in meters
-    y_ecef = da.isel({coord_dim: 1})  # y coordinate in meters
-    z_ecef = da.isel({coord_dim: 2})  # z coordinate in meters
+    x = da.sel({coord_dim: 'x'})  # x coordinate in meters
+    y = da.sel({coord_dim: 'y'})  # y coordinate in meters
+    z = da.sel({coord_dim: 'z'})  # z coordinate in meters
 
     # Vectorized Ferrari/Heikkinen Solution
-    longitude_rad = np.arctan2(y_ecef, x_ecef)
+    longitude_rad = np.arctan2(y, x)
 
-    p = np.sqrt(x_ecef ** 2 + y_ecef ** 2)
-    f = 54.0 * polar_radius_sq * z_ecef ** 2
-    g = p ** 2 + (1 - e_sq) * z_ecef ** 2 - e_sq * (eq_radius_sq - polar_radius_sq)
+    p = np.sqrt(x ** 2 + y ** 2)
+    f = 54.0 * EARTH_SEMI_MINOR_AXIS_SQ * z ** 2
+    g = p ** 2 + (1 - e_sq) * z ** 2 - e_sq * (EARTH_SEMI_MAJOR_AXIS_SQ - EARTH_SEMI_MINOR_AXIS_SQ)
     c = (e_sq ** 2 * f * p ** 2) / (g ** 3)
     s = np.cbrt(1 + c + np.sqrt(c ** 2 + 2 * c))
     k = s + 1 + 1 / s
@@ -184,24 +174,24 @@ def ecef_to_lla(
     q = np.sqrt(1 + 2 * e_sq ** 2 * p_formula)
 
     r0_term1 = (-p_formula * e_sq * p) / (1 + q)
-    r0_sqrt_term = (eq_radius_sq / 2) * (1 + 1 / q) - \
-                   (p_formula * (1 - e_sq) * z_ecef ** 2) / (q * (1 + q)) - \
+    r0_sqrt_term = (EARTH_SEMI_MAJOR_AXIS_SQ / 2) * (1 + 1 / q) - \
+                   (p_formula * (1 - e_sq) * z ** 2) / (q * (1 + q)) - \
                    (p_formula * p ** 2) / 2
     r0_sqrt_term = xr.where(r0_sqrt_term < 0, 0, r0_sqrt_term)
     r0 = r0_term1 + np.sqrt(r0_sqrt_term)
 
-    u = np.sqrt((p - e_sq * r0) ** 2 + z_ecef ** 2)
-    v = np.sqrt((p - e_sq * r0) ** 2 + (1 - e_sq) * z_ecef ** 2)
+    u = np.sqrt((p - e_sq * r0) ** 2 + z ** 2)
+    v = np.sqrt((p - e_sq * r0) ** 2 + (1 - e_sq) * z ** 2)
 
-    z0 = (polar_radius_sq * z_ecef) / (EARTH_SEMI_MAJOR_AXIS * v)
+    z0 = (EARTH_SEMI_MINOR_AXIS_SQ * z) / (EARTH_SEMI_MAJOR_AXIS * v)
 
-    latitude_rad = np.arctan((z_ecef + e_prime_sq * z0) / p)
-    altitude_m = u * (1 - polar_radius_sq / (EARTH_SEMI_MAJOR_AXIS * v))
+    latitude_rad = np.arctan((z + e_prime_sq * z0) / p)
+    altitude_m = u * (1 - EARTH_SEMI_MINOR_AXIS_SQ / (EARTH_SEMI_MAJOR_AXIS * v))
 
     # Handle edge case where p is zero (point is on the Z-axis)
     on_z_axis = p == 0
-    lat_on_z_axis = np.pi / 2 * np.sign(z_ecef)
-    alt_on_z_axis = np.abs(z_ecef) - EARTH_SEMI_MINOR_AXIS
+    lat_on_z_axis = np.pi / 2 * np.sign(z)
+    alt_on_z_axis = np.abs(z) - EARTH_SEMI_MINOR_AXIS
 
     latitude_rad = xr.where(on_z_axis, lat_on_z_axis, latitude_rad)
     altitude_m = xr.where(on_z_axis, alt_on_z_axis, altitude_m)
@@ -213,12 +203,9 @@ def ecef_to_lla(
     # Stack the results back into a DataArray
     lla_coords = np.stack([latitude_deg.values, longitude_deg.values, altitude_m.values], axis=-1)
 
-    # Create new coordinate labels for LLA
-    coord_labels = ['latitude', 'longitude', 'altitude']
-
     # Create the result DataArray with same dimensions as input
     result_coords = da.coords.copy()
-    result_coords[coord_dim] = coord_labels
+    result_coords[coord_dim] = ['latitude', 'longitude', 'altitude']
 
     lla_da = xr.DataArray(
         lla_coords,
@@ -235,14 +222,285 @@ def ecef_to_lla(
     if keep_attrs:
         lla_da.attrs = da.attrs.copy()
 
-    lla_da.attrs.update({
-        'coordinate_system': 'LLA',
-        'coordinate_system_description': 'Geodetic Latitude, Longitude, Altitude',
-        'long_name': 'LLA coordinates'
-    })
-
     return lla_da
 
+def ecef_to_elevation(
+        observer_ecef: np.ndarray,
+        observable_ecef: xr.DataArray,
+        coord_dim: str = 'coordinate',
+        keep_attrs: bool = False
+) -> xr.DataArray:
+    """
+    Convert ECEF coordinates to elevation angles from a single observer to observable(s).
+
+    Parameters
+    ----------
+    observer_ecef : np.ndarray
+        Observer position in ECEF coordinates as array of shape (3,)
+        containing [x, y, z] in meters
+    observable_ecef : xr.DataArray
+        Observable position(s) in ECEF coordinates with shape (..., 3)
+        where the coordinate dimension contains [x, y, z] in meters
+    coord_dim : str, default 'coordinate'
+        Name of the coordinate dimension (should have size 3 for x, y, z)
+    keep_attrs : bool, default False
+        Whether to keep variable attributes from input DataArray
+
+    Returns
+    -------
+    xr.DataArray
+        DataArray with elevation angles in radian for each observable
+
+    Raises
+    ------
+    ValueError
+        If coordinate dimension doesn't have size 3 or observer array is not size 3
+
+    Notes
+    -----
+    Elevation angle is calculated in the local East-North-Up (ENU) frame at the
+    observer location. Positive angles indicate the observable is above the horizon.
+    """
+
+    # Check observer array
+    if observer_ecef.shape != (3,):
+        raise ValueError(
+            f"Observer array must have shape (3,) for [x, y, z], got {observer_ecef.shape}"
+        )
+
+    # Check that coordinate dimension exists and has size 3
+    if coord_dim not in observable_ecef.dims:
+        raise ValueError(
+            f"Coordinate dimension '{coord_dim}' not found in observable_ecef. "
+            f"Available dimensions: {list(observable_ecef.dims)}"
+        )
+    if observable_ecef.sizes[coord_dim] != 3:
+        raise ValueError(
+            f"Coordinate dimension '{coord_dim}' in observable_ecef must have size 3 (x, y, z), "
+            f"got {observable_ecef.sizes[coord_dim]}"
+        )
+
+    # Convert observer numpy array to xarray DataArray
+    observer_da = xr.DataArray(
+        observer_ecef,
+        dims=[coord_dim],
+        coords={coord_dim: ['x', 'y', 'z']}
+    )
+
+    # Convert observer to LLA
+    observer_lla = ecef_to_lla(observer_da, coord_dim=coord_dim)
+    observer_lat_rad = np.radians(observer_lla.sel({coord_dim: 'latitude'}))
+    observer_lon_rad = np.radians(observer_lla.sel({coord_dim: 'longitude'}))
+
+    # Calculate rotation matrix components for ECEF to ENU transformation
+    sin_lat = np.sin(observer_lat_rad)
+    cos_lat = np.cos(observer_lat_rad)
+    sin_lon = np.sin(observer_lon_rad)
+    cos_lon = np.cos(observer_lon_rad)
+
+    # Extract observer ECEF coordinates
+    observer_x = observer_ecef[0]
+    observer_y = observer_ecef[1]
+    observer_z = observer_ecef[2]
+
+    # Extract ECEF coordinates for observables
+    observable_x = observable_ecef.sel({coord_dim: 'x'})
+    observable_y = observable_ecef.sel({coord_dim: 'y'})
+    observable_z = observable_ecef.sel({coord_dim: 'z'})
+
+    # Calculate difference vectors (observable - observer)
+    dx = observable_x - observer_x
+    dy = observable_y - observer_y
+    dz = observable_z - observer_z
+
+    # Transform to ENU coordinates using rotation matrix
+    # ENU rotation matrix:
+    # [-sin_lon,              cos_lon,             0        ]
+    # [-sin_lat*cos_lon, -sin_lat*sin_lon,  cos_lat ]
+    # [ cos_lat*cos_lon,  cos_lat*sin_lon,  sin_lat ]
+
+    east = -sin_lon * dx + cos_lon * dy
+    north = -sin_lat * cos_lon * dx - sin_lat * sin_lon * dy + cos_lat * dz
+    up = cos_lat * cos_lon * dx + cos_lat * sin_lon * dy + sin_lat * dz
+
+    # Calculate horizontal distance and elevation angle
+    horizontal_distance = np.sqrt(east ** 2 + north ** 2)
+    elevation = np.arctan2(up, horizontal_distance)
+
+    # Set attributes
+    elevation.attrs = {
+        'long_name': 'Elevation angle',
+        'units': 'degrees',
+        'description': 'Elevation angle from observer to observable in local ENU frame'
+    }
+
+    if keep_attrs and hasattr(observable_ecef, 'attrs'):
+        elevation.attrs.update(observable_ecef.attrs)
+
+    return elevation
+
+def ecef_distance(
+        ecef1: xr.DataArray,
+        ecef2: xr.DataArray,
+        coord_dim: str = 'coordinate',
+        keep_attrs: bool = False
+) -> xr.DataArray:
+    """
+    Calculate the Euclidean distance between two ECEF positions.
+
+    Parameters
+    ----------
+    ecef1 : xr.DataArray
+        First ECEF position(s) with shape (..., 3)
+        where the coordinate dimension contains [x, y, z] in meters
+    ecef2 : xr.DataArray
+        Second ECEF position(s) with shape (..., 3)
+        where the coordinate dimension contains [x, y, z] in meters
+    coord_dim : str, default 'coordinate'
+        Name of the coordinate dimension (should have size 3 for x, y, z)
+    keep_attrs : bool, default False
+        Whether to keep variable attributes from input DataArray
+
+    Returns
+    -------
+    xr.DataArray
+        DataArray with distances in meters between corresponding positions
+
+    Raises
+    ------
+    ValueError
+        If coordinate dimension doesn't have size 3
+
+    Notes
+    -----
+    Calculates the straight-line (Euclidean) distance in 3D space.
+    This is not the same as the geodetic distance along Earth's surface.
+    """
+
+    # Check that coordinate dimension exists and has size 3
+    for da, name in [(ecef1, 'ecef1'), (ecef2, 'ecef2')]:
+        if coord_dim not in da.dims:
+            raise ValueError(
+                f"Coordinate dimension '{coord_dim}' not found in {name}. "
+                f"Available dimensions: {list(da.dims)}"
+            )
+        if da.sizes[coord_dim] != 3:
+            raise ValueError(
+                f"Coordinate dimension '{coord_dim}' in {name} must have size 3 (x, y, z), "
+                f"got {da.sizes[coord_dim]}"
+            )
+
+    # Calculate difference vector
+    diff = ecef2 - ecef1
+
+    # Calculate Euclidean distance using linalg.norm along coordinate dimension
+    distance = xr.apply_ufunc(
+        np.linalg.norm,
+        diff,
+        input_core_dims=[[coord_dim]],
+        kwargs={'axis': -1}
+    )
+
+    # Set attributes
+    distance.attrs = {
+        'long_name': 'Distance',
+        'units': 'm',
+        'description': 'Euclidean distance between ECEF positions'
+    }
+
+    if keep_attrs and hasattr(ecef1, 'attrs'):
+        distance.attrs.update(ecef1.attrs)
+
+    return distance
+
+def lla_distance(
+        lla1: xr.DataArray,
+        lla2: xr.DataArray,
+        coord_dim: str = 'coordinate',
+        keep_attrs: bool = False
+) -> xr.DataArray:
+    """
+    Calculate the great circle distance between two LLA positions.
+
+    Parameters
+    ----------
+    lla1 : xr.DataArray
+        First LLA position(s) with shape (..., 3)
+        where the coordinate dimension contains [latitude, longitude, altitude]
+        - latitude in degrees
+        - longitude in degrees
+        - altitude in meters (not used in calculation)
+    lla2 : xr.DataArray
+        Second LLA position(s) with shape (..., 3)
+        where the coordinate dimension contains [latitude, longitude, altitude]
+        - latitude in degrees
+        - longitude in degrees
+        - altitude in meters (not used in calculation)
+    coord_dim : str, default 'coordinate'
+        Name of the coordinate dimension (should have size 3 for lat, lon, alt)
+    keep_attrs : bool, default False
+        Whether to keep variable attributes from input DataArray
+
+    Returns
+    -------
+    xr.DataArray
+        DataArray with great circle distances in meters between corresponding positions
+
+    Raises
+    ------
+    ValueError
+        If coordinate dimension doesn't have size 3
+
+    Notes
+    -----
+    Calculates the great circle distance along Earth's surface using the Haversine formula.
+    This ignores altitude differences and assumes a spherical Earth with mean radius.
+    For more accurate geodetic distances, consider using a proper geodetic library.
+    """
+
+    # Check that coordinate dimension exists and has size 3
+    for da, name in [(lla1, 'lla1'), (lla2, 'lla2')]:
+        if coord_dim not in da.dims:
+            raise ValueError(
+                f"Coordinate dimension '{coord_dim}' not found in {name}. "
+                f"Available dimensions: {list(da.dims)}"
+            )
+        if da.sizes[coord_dim] != 3:
+            raise ValueError(
+                f"Coordinate dimension '{coord_dim}' in {name} must have size 3 (lat, lon, alt), "
+                f"got {da.sizes[coord_dim]}"
+            )
+
+    # Extract latitude and longitude and convert to radians
+    lat1_rad = np.radians(lla1.sel({coord_dim: 'latitude'}))
+    lon1_rad = np.radians(lla1.sel({coord_dim: 'longitude'}))
+
+    lat2_rad = np.radians(lla2.sel({coord_dim: 'latitude'}))
+    lon2_rad = np.radians(lla2.sel({coord_dim: 'longitude'}))
+
+    # Haversine formula
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+
+    a = np.sin(dlat / 2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2)**2
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+
+    # Calculate distance using Earth's mean radius
+    distance = EARTH_MEAN_RADIUS * c
+
+    # Set attributes
+    distance.attrs = {
+        'long_name': 'Great circle distance',
+        'units': 'm',
+        'description': 'Great circle distance along Earth\'s surface (Haversine formula)'
+    }
+
+    distance = distance.drop_vars(coord_dim)
+
+    if keep_attrs and hasattr(lla1, 'attrs'):
+        distance.attrs.update(lla1.attrs)
+
+    return distance
 
 class ECEFPosition:
     """

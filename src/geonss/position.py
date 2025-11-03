@@ -12,7 +12,7 @@ import numpy as np
 
 from geonss.constants import SPEED_OF_LIGHT, OMEGA_E
 from geonss.algorithms import iterative_reweighted_least_squares, huber_weight
-from geonss.coordinates import ECEFPosition
+from geonss.coordinates import ecef_to_elevation, ecef_to_lla
 from geonss.interpolation import interpolate_orbit_positions, interpolate_orbit_positions_with_antex_correction
 from geonss.navigation import calculate_satellite_positions
 from geonss.ranges import tropospheric_delay, calculate_pseudo_ranges
@@ -66,14 +66,12 @@ def build_positioning_model(
     """
     # Initial Setup & Parameter Extraction
     time = ranges.time.values
-    receiver_pos = ECEFPosition.from_array(parameters[:3])
-    receiver_pos_lla = receiver_pos.to_lla()
-    clock_bias = parameters[3]
 
     # Filter to valid satellites and align datasets
     ranges = ranges.dropna(dim="sv", subset=["pseudo_range"])
     ranges, satellites = xr.align(
-        ranges, satellites, join="inner", exclude=["time"])
+        ranges, satellites, join="inner", exclude=["time"]
+    )
 
     # Extract data for valid satellites
     satellite_ranges = ranges.pseudo_range.values
@@ -112,20 +110,26 @@ def build_positioning_model(
             [rotated_x, rotated_y, satellite_positions[:, 2]])
 
     # Calculate elevation angles (needed for troposphere and weighting)
-    elevation_angles = receiver_pos.elevation_angle(satellite_positions)
+    elevation_angles = ecef_to_elevation(parameters[:3], satellites['position'], coord_dim='ECEF').values
 
     # Apply tropospheric correction if enabled (applied to pseudo-range measurement)
     tropospheric_corrections = np.zeros(num_sats)
     if enable_tropospheric_correction:
+        receiver_pos_lla_da = ecef_to_lla(xr.DataArray(
+            parameters[:3],
+            dims=['coordinate'],
+            coords={'coordinate': ['x', 'y', 'z']}
+        ))
+
         tropospheric_corrections = tropospheric_delay(
             time,
             elevation_angles,
-            receiver_pos_lla.altitude,
-            receiver_pos_lla.latitude
+            receiver_pos_lla_da.loc['altitude'].item(),
+            receiver_pos_lla_da.loc['latitude'].item()
         )
 
     # Geometric Calculations
-    displacements = satellite_positions - receiver_pos.array
+    displacements = satellite_positions - parameters[:3]
     geometric_ranges = np.linalg.norm(displacements, axis=1)
     unit_vectors = displacements / geometric_ranges[:, np.newaxis]
 
@@ -142,7 +146,7 @@ def build_positioning_model(
     residuals = (
         satellite_ranges
         - geometric_ranges
-        - clock_bias
+        - parameters[3]
         + satellite_clock_biases_m
         - tropospheric_corrections
     )
@@ -182,13 +186,15 @@ def spp(
         navigation: xr.Dataset | None = None,
         sp3: xr.Dataset | None = None,
         antex: xr.Dataset | None = None,
-        a_priori_position: ECEFPosition = ECEFPosition(),
+        a_priori_position: np.array = np.array([0.0, 0.0, 0.0]),
         a_priori_clock_bias: np.float64 = np.float64(0),
         enable_signal_travel_time_correction: bool = True,
         enable_earth_rotation_correction: bool = True,
         enable_tropospheric_correction: bool = True,
         enable_elevation_weighting: bool = True,
         enable_snr_weighting: bool = True,
+        nadir_correction: float = 0.0,
+        track_correction: float = 0.0,
 ) -> xr.Dataset:
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
@@ -214,6 +220,8 @@ def spp(
         enable_tropospheric_correction: Whether to apply tropospheric correction
         enable_elevation_weighting: Whether to apply elevation-based weighting
         enable_snr_weighting: Whether to apply SNR-based weighting
+        nadir_correction: Correction in meter in up direction.
+        track_correction: Correction in meter against velocity (x, y, z)
 
     Returns:
         xarray Dataset with receiver positions (ECEF coordinates) and clock bias for each time step
@@ -233,8 +241,7 @@ def spp(
             sp3, ranges, antex)
 
     elif navigation:
-        logger.info(
-            "Selecting common satellites between observation and navigation data")
+        logger.info("Selecting common satellites between observation and navigation data")
         observation, navigation = xr.align(
             observation, navigation, exclude='time')
 
@@ -245,8 +252,7 @@ def spp(
         sat_pos = calculate_satellite_positions(navigation, ranges)
 
     else:
-        raise ValueError(
-            "Either navigation or sp3 + antex data must be provided")
+        raise ValueError("Either navigation or sp3 + antex data must be provided")
 
     # Compute position for each time step
     logger.info(
@@ -254,8 +260,7 @@ def spp(
     )
 
     # Create initial parameter vector (position and clock bias)
-    initial_state = np.array(
-        [*a_priori_position.array, a_priori_clock_bias], dtype=np.float64)
+    initial_state = np.append(a_priori_position, a_priori_clock_bias)
 
     # Prepare output arrays
     times = observation.time.values
@@ -349,5 +354,11 @@ def spp(
         positions_ds,
         8,
     )
+
+    # Corrections of center of mass
+    unit_velocity = result_ds.velocity / (result_ds.velocity ** 2).sum(dim='ECEF') ** 0.5
+    unit_position = result_ds.position / (result_ds.position ** 2).sum(dim='ECEF') ** 0.5
+    result_ds['position'] += (unit_velocity * 0.001 * track_correction)
+    result_ds['position'] += (unit_position * 0.001 * nadir_correction)
 
     return result_ds
