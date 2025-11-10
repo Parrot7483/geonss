@@ -120,6 +120,20 @@ def main():
         dest="disable_snr_weighting",
         help="Disable SNR-based weighting (boolean flag)."
     )
+    parser.add_argument(
+        "--nadir_correction",
+        type=float,
+        dest="nadir_correction",
+        default=0.0,
+        help="nadir_correction: Correction in meter in up direction."
+    )
+    parser.add_argument(
+        "--track_correction",
+        type=float,
+        dest="track_correction",
+        default="0.0",
+        help="track_correction: Correction in meter against velocity (x, y, z)"
+    )
 
     try:
         args = parser.parse_args()
@@ -200,7 +214,9 @@ def main():
             enable_earth_rotation_correction=not args.disable_earth_rotation_correction,
             enable_tropospheric_correction=not args.disable_tropospheric_correction,
             enable_elevation_weighting=not args.disable_elevation_weighting,
-            enable_snr_weighting=not args.disable_snr_weighting
+            enable_snr_weighting=not args.disable_snr_weighting,
+            nadir_correction = args.nadir_correction,
+            track_correction = args.track_correction
         )
 
         # Add the satellite ID as a coordinate to the result
