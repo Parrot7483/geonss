@@ -99,7 +99,7 @@ def latlon_distance(diff: list, use_arcseconds=False, figsize=(24, 12), filename
     ax.axvline(0, color='black', lw=0.75, linestyle='--')
 
     # Add labels and title
-    unit = "arcseconds" if use_arcseconds else "degrees"
+    unit = "meter"
     ax.set_xlabel(f"Longitude Difference [{unit}]")
     ax.set_ylabel(f"Latitude Difference [{unit}]")
     ax.set_title("Zero-Centered Coordinate Differences")

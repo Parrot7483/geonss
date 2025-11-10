@@ -32,6 +32,8 @@
             buildInputs = with pkgs; [
               python3
               python3Packages.virtualenv
+              python3Packages.pylint
+              python3Packages.pip
 
               # Development
               python3Packages.jupyterlab
