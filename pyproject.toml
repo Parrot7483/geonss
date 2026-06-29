@@ -12,7 +12,7 @@ dependencies = [
     "hatanaka @ git+https://github.com/valgur/hatanaka@master",
     "matplotlib==3.10.1",
     "multipledispatch",
-    "numpy==2.2.4",
+    "numpy==2.2.6",
     "paramiko==4.0.0",
     "platformdirs",
     "scipy==1.15.2",
