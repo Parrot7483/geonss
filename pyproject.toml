@@ -16,7 +16,7 @@ dependencies = [
     "paramiko==4.0.0",
     "platformdirs",
     "scipy==1.15.2",
-    "xarray==2025.1.2",
+    "xarray==2025.6.1",
 	"midgard==1.3.0",
 	"colorama==0.4.6",
 	"pint==0.25",
